@@ -1040,7 +1040,7 @@ class MultifidelityGP(GPmodel):
         return cov
     
     @partial(jit, static_argnums=(0,))
-    def posterior_covariance_H(self, x, xp **kwargs):
+    def posterior_covariance_H(self, x, xp, **kwargs):
         params = kwargs['params']
         batch = kwargs['batch']
         bounds = kwargs['bounds']
