@@ -12,8 +12,6 @@ from scipy.stats import gaussian_kde
 
 #import matplotlib.pyplot as plt
 
-
-
 @jit
 def normalize(X, y, bounds):
     mu_y, sigma_y = y.mean(0), y.std(0)
@@ -22,7 +20,6 @@ def normalize(X, y, bounds):
     batch = {'X': X, 'y': y}
     norm_const = {'mu_y': mu_y, 'sigma_y': sigma_y}
     return batch, norm_const
-
 
 @jit
 def normalize_MultifidelityGP(XL, yL, XH, yH, bounds):
@@ -44,7 +41,6 @@ def normalize_GradientGP(XF, yF, XG, yG):
     norm_const = {'mu_X': 0.0, 'sigma_X': 1.0,
                   'mu_y': 0.0, 'sigma_y': 1.0}
     return batch, norm_const
-
 
 @jit
 def normalize_HeterogeneousMultifidelityGP(XL, yL, XH, yH, bounds):
@@ -71,7 +67,6 @@ def standardize(X, y):
     norm_const = {'mu_X': mu_X, 'sigma_X': sigma_X,
                   'mu_y': mu_y, 'sigma_y': sigma_y}
     return batch, norm_const
-
 
 @jit
 def standardize_MultifidelityGP(XL, yL, XH, yH):
