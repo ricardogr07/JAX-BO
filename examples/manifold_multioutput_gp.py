@@ -9,8 +9,8 @@ Created on Wed Aug  4 21:57:09 2021
 import numpy as onp
 import jax.numpy as np
 from jax import random, vmap
-from jax.config import config
-config.update("jax_enable_x64", True)
+import jax
+jax.config.update("jax_enable_x64", True)
 
 from pyDOE import lhs
 import matplotlib.pyplot as plt
