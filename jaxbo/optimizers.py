@@ -75,11 +75,6 @@ def minimize_lbfgs(
 
     return result.x, result.fun
 
-
-from scipy.optimize import minimize
-import numpy as np
-from typing import Callable, Tuple, Optional, List, Union
-
 def minimize_lbfgs_grad(
     objective: Callable[[np.ndarray], Tuple[float, np.ndarray]],
     x0: np.ndarray,
@@ -149,4 +144,3 @@ def minimize_lbfgs_grad(
     )
 
     return result.x, result.fun
-
