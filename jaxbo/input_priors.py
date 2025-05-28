@@ -1,8 +1,41 @@
+import abc
 import jax.numpy as np
 from jax import random
 from jax.scipy.stats import multivariate_normal, uniform
 
-class uniform_prior:
+class Prior(abc.ABC):
+    """
+    Abstract base class for prior distributions.
+    """
+
+    @abc.abstractmethod
+    def sample(self, rng_key: random.PRNGKey, N: int) -> np.ndarray:
+        """
+        Draw N samples from the uniform prior.
+
+        Args:
+            rng_key (random.PRNGKey): JAX random key.
+            N (int): Number of samples.
+
+        Returns:
+            np.ndarray: Samples of shape (N, dim).
+        """
+        pass
+
+    @abc.abstractmethod
+    def pdf(self, x: np.ndarray) -> np.ndarray:
+        """
+        Compute the probability density function at points x.
+
+        Args:
+            x (np.ndarray): Points to evaluate, shape (..., dim).
+
+        Returns:
+            np.ndarray: PDF values at x, shape (...,).
+        """
+        pass
+
+class uniform_prior(Prior):
     """
     Uniform prior distribution over a hyper-rectangle.
 
@@ -15,32 +48,13 @@ class uniform_prior:
         self.ub = ub
         self.dim = lb.shape[0]
     
-    def sample(self, rng_key: random.PRNGKey, N: int) -> np.ndarray:
-        """
-        Draw N samples from the uniform prior.
-
-        Args:
-            rng_key (random.PRNGKey): JAX random key.
-            N (int): Number of samples.
-
-        Returns:
-            np.ndarray: Samples of shape (N, dim).
-        """
+    def sample(self, rng_key: random.PRNGKey, N: int) -> np.ndarray: 
         return self.lb + (self.ub - self.lb) * random.uniform(rng_key, (N, self.dim))
     
     def pdf(self, x: np.ndarray) -> np.ndarray:
-        """
-        Compute the probability density function at points x.
-
-        Args:
-            x (np.ndarray): Points to evaluate, shape (..., dim).
-
-        Returns:
-            np.ndarray: PDF values at x, shape (...,).
-        """
         return np.sum(uniform.pdf(x, self.lb, self.ub - self.lb), axis=-1)
 
-class gaussian_prior:
+class gaussian_prior(Prior):
     """
     Gaussian (multivariate normal) prior distribution.
 
@@ -54,26 +68,7 @@ class gaussian_prior:
         self.dim = mu.shape[0]
 
     def sample(self, rng_key: random.PRNGKey, N: int) -> np.ndarray:
-        """
-        Draw N samples from the Gaussian prior.
-
-        Args:
-            rng_key (random.PRNGKey): JAX random key.
-            N (int): Number of samples.
-
-        Returns:
-            np.ndarray: Samples of shape (N, dim).
-        """
         return random.multivariate_normal(rng_key, self.mu, self.cov, (N,))
 
     def pdf(self, x: np.ndarray) -> np.ndarray:
-        """
-        Compute the probability density function at points x.
-
-        Args:
-            x (np.ndarray): Points to evaluate, shape (..., dim).
-
-        Returns:
-            np.ndarray: PDF values at x, shape (...,).
-        """
         return multivariate_normal.pdf(x, self.mu, self.cov)
