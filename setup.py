@@ -24,8 +24,8 @@ with io.open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 INSTALL_REQUIRES = [
     'numpy',
     'scipy',
-    'jax>=0.4.23,<0.5.0',
-    'jaxlib>=0.4.23,<0.5.0',
+    'jax',
+    'jaxlib',
     'scikit-learn',
     'KDEpy',
     'pyDOE',
