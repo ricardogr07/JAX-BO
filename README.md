@@ -6,6 +6,14 @@ This is a modified and extended version of the original [JAX-BO](https://github.
 
 ## Getting Started
 
+### Installation
+
+You can install the latest version from PyPI:
+
+```bash
+pip install jaxbo
+```
+
 Launch the interactive tutorial on Google Colab:  
 [![Open Demo in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ricardogr07/JAX-BO/blob/master/jaxbo_colab.ipynb)
 
