@@ -291,30 +291,38 @@ def compute_w_gmm(x, **kwargs):
     w = np.sum(vmap(gmm_mode)(weights, means, covs), axis = 0)
     return w
 
-def fit_kernel_density(X, xi, weights = None, bw=None):
-    def fit_kernel_density(X, xi, weights=None, bw=None):
-        """
-        Fits a kernel density estimator (KDE) to the input data and evaluates the estimated probability density function (PDF) at specified points.
-        Parameters
-        ----------
-        X : array-like
-            Input data used to fit the kernel density estimator. Should be a 1D array.
-        xi : array-like
-            Points at which to evaluate the estimated PDF.
-        weights : array-like, optional
-            Weights for each data point in X. If None, equal weighting is assumed.
-        bw : float, optional
-            Bandwidth for the KDE. If None, the bandwidth is estimated automatically.
-        Returns
-        -------
-        pdf : ndarray
-            The estimated PDF values at the points specified by `xi`. Values are clipped to be non-negative and a small epsilon (1e-8) is added for numerical stability.
-        Notes
-        -----
-        - Uses FFTKDE for fast kernel density estimation.
-        - If bandwidth estimation fails or results in a very small value, a default of 1.0 is used.
-        - The output PDF is interpolated using a linear interpolation and extrapolated as needed.
-        """
+def fit_kernel_density(X, xi, weights=None, bw=None):
+    """Fit a kernel density estimator and evaluate its PDF at ``xi``.
+
+    Parameters
+    ----------
+    X : array-like
+        Input data used to fit the kernel density estimator. Should be a 1D
+        array.
+    xi : array-like
+        Points at which to evaluate the estimated PDF.
+    weights : array-like, optional
+        Weights for each data point in ``X``. If ``None``, equal weighting is
+        assumed.
+    bw : float, optional
+        Bandwidth for the KDE. If ``None``, the bandwidth is estimated
+        automatically.
+
+    Returns
+    -------
+    pdf : ndarray
+        The estimated PDF values at the points specified by ``xi``. Values are
+        clipped to be non-negative and a small epsilon (``1e-8``) is added for
+        numerical stability.
+
+    Notes
+    -----
+    - Uses :class:`FFTKDE` for fast kernel density estimation.
+    - If bandwidth estimation fails or results in a very small value, a default
+      of ``1.0`` is used.
+    - The output PDF is interpolated using a linear interpolation and
+      extrapolated as needed.
+    """
 
     X, weights = onp.array(X), onp.array(weights)
     X = X.flatten()
