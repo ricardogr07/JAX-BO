@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jaxbo"
+version = "0.1.0"
+description = "Bayesian optimization in JAX"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+  {name = "Ricardo García Ramírez", email = "rgr.5882@gmail.com"}
+]
+dependencies = [
+  "jax",
+  "jaxlib",
+  "scikit-learn",
+  "numpy",
+  "scipy"
+]
+
+[project.urls]
+Homepage = "https://github.com/ricardog07/JAX-BO"
+Repository = "https://github.com/ricardog07/JAX-BO"

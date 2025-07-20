@@ -34,7 +34,7 @@ INSTALL_REQUIRES = [
 
 setuptools.setup(
     name='jaxbo',
-    version='0.1.1',
+    version='0.0.0',  # placeholder, managed by release-please
     license='Apache 2.0',
     author='Ricardo García Ramírez',
     author_email='rgr.5882@gmail.com',
