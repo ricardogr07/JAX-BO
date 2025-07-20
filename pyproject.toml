@@ -4,22 +4,34 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jaxbo"
-version = "0.1.0"
-description = "Bayesian optimization in JAX"
+version = "0.0.0"
+description = "Fork of PredictiveIntelligenceLab/JAX-BO with updates and compatibility improvements for Colab and pipelines"
 readme = "README.md"
-requires-python = ">=3.8"
-license = {text = "MIT"}
+requires-python = ">=3.6"
+license = {text = "Apache-2.0"}
 authors = [
   {name = "Ricardo García Ramírez", email = "rgr.5882@gmail.com"}
 ]
+keywords = ["jax", "bayesian optimization", "machine learning", "optimization"]
+
 dependencies = [
+  "numpy",
+  "scipy",
   "jax",
   "jaxlib",
   "scikit-learn",
-  "numpy",
-  "scipy"
+  "KDEpy",
+  "pyDOE",
+  "numpyro"
 ]
 
 [project.urls]
-Homepage = "https://github.com/ricardog07/JAX-BO"
-Repository = "https://github.com/ricardog07/JAX-BO"
+homepage = "https://github.com/ricardogr07/JAX-BO"
+repository = "https://github.com/ricardogr07/JAX-BO"
+documentation = "https://github.com/ricardogr07/JAX-BO"
+bug_tracker = "https://github.com/ricardogr07/JAX-BO/issues"
+
+[tool.setuptools]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jaxbo*"]
