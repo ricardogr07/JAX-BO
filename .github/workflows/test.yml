@@ -25,4 +25,7 @@ jobs:
         run: pip install tox
 
       - name: Run tox
-        run: tox -e py${{ matrix.python-version }} lint
+        run: |
+          version=${{ matrix.python-version }}
+          version_nodot=${version//./}
+          tox -e py${version_nodot},lint
