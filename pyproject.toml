@@ -4,11 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jaxbo"
-version = "0.0.0"
+version = "0.3.0"
 description = "Fork of PredictiveIntelligenceLab/JAX-BO with updates and compatibility improvements for Colab and pipelines"
 readme = "README.md"
 requires-python = ">=3.6"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [
   {name = "Ricardo García Ramírez", email = "rgr.5882@gmail.com"}
 ]
