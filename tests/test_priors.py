@@ -19,4 +19,3 @@ def test_gaussian_prior_sample_pdf():
     assert samples.shape == (3, 2)
     pdf_vals = prior.pdf(samples)
     assert jnp.all(pdf_vals > 0)
-

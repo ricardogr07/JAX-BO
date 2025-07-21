@@ -17,4 +17,3 @@ def test_rbf_kernel():
     K = kernels.RBF(x, x, params)
     assert K.shape == (2, 2)
     assert jnp.isclose(K[0, 0], 1.0)
-

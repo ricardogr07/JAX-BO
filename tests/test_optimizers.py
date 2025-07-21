@@ -22,4 +22,3 @@ def test_minimize_lbfgs_grad():
     x_opt, f_opt = minimize_lbfgs_grad(quad_grad, np.array([0.0]))
     assert np.allclose(x_opt, 3.0, atol=1e-3)
     assert f_opt < 1e-6
-
