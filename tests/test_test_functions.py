@@ -14,4 +14,3 @@ def test_forrester_high_low():
     high = f.evaluate_high(x)
     low = f.evaluate_low(x)
     assert high != low
-

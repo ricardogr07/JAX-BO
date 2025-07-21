@@ -31,7 +31,7 @@ class GP(GPmodel):
         Returns:
             Lower-triangular matrix from Cholesky decomposition.
         """
-        X = batch['X']
+        X = batch["X"]
         N, D = X.shape
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
@@ -50,11 +50,12 @@ class GP(GPmodel):
         Returns:
             Best hyperparameters found (array).
         """
+
         def objective(params):
             value, grads = self.likelihood_value_and_grad(params, batch)
             return onp.array(value), onp.array(grads)
 
-        dim = batch['X'].shape[1]
+        dim = batch["X"].shape[1]
         rng_keys = random.split(rng_key, num_restarts)
 
         params_list, values = [], []
@@ -81,13 +82,15 @@ class GP(GPmodel):
         Returns:
             Tuple (mean, std): Predictive posterior mean and standard deviation.
         """
-        params, batch, bounds = kwargs['params'], kwargs['batch'], kwargs['bounds']
-        X_star = (X_star - bounds['lb']) / (bounds['ub'] - bounds['lb'])
-        X, y = batch['X'], batch['y']
+        params, batch, bounds = kwargs["params"], kwargs["batch"], kwargs["bounds"]
+        X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        X, y = batch["X"], batch["y"]
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
 
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (sigma_n + 1e-8)
+        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
+            sigma_n + 1e-8
+        )
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
@@ -95,7 +98,7 @@ class GP(GPmodel):
 
         mu = k_pX @ alpha
         cov = k_pp - k_pX @ beta
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.))
+        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
         return mu, std
 
     @partial(jit, static_argnums=(0,))
@@ -110,14 +113,13 @@ class GP(GPmodel):
         Returns:
             Posterior covariance matrix between x and xp.
         """
-        params = kwargs['params']
-        batch = kwargs['batch']
-        bounds = kwargs['bounds']
+        params = kwargs["params"]
+        batch = kwargs["batch"]
+        bounds = kwargs["bounds"]
 
-        x = (x - bounds['lb']) / (bounds['ub'] - bounds['lb'])
-        xp = (xp - bounds['lb']) / (bounds['ub'] - bounds['lb'])
-        X, y = batch['X'], batch['y']
-        sigma_n = np.exp(params[-1])
+        x = (x - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        xp = (xp - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        X = batch["X"]
         theta = np.exp(params[:-1])
 
         k_pp = self.kernel(x, xp, theta)
@@ -140,17 +142,19 @@ class GP(GPmodel):
         Returns:
             Sample drawn from the multivariate normal posterior.
         """
-        params = kwargs['params']
-        batch = kwargs['batch']
-        bounds = kwargs['bounds']
-        rng_key = kwargs['rng_key']
+        params = kwargs["params"]
+        batch = kwargs["batch"]
+        bounds = kwargs["bounds"]
+        rng_key = kwargs["rng_key"]
 
-        X_star = (X_star - bounds['lb']) / (bounds['ub'] - bounds['lb'])
-        X, y = batch['X'], batch['y']
+        X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        X, y = batch["X"], batch["y"]
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
 
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (sigma_n + 1e-8)
+        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
+            sigma_n + 1e-8
+        )
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))

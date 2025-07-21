@@ -1,5 +1,4 @@
 import jax.numpy as jnp
-from jax import random
 from jaxbo import acquisitions
 
 
@@ -7,7 +6,6 @@ def test_ei_basic():
     mean = jnp.array([0.5])
     std = jnp.array([1.0])
     best = 0.0
-    # EI returns negative improvement
     val = acquisitions.EI(mean, std, best)
     assert val < 0
 
@@ -32,4 +30,3 @@ def test_us():
     std = jnp.array([0.5])
     val = acquisitions.US(std)
     assert jnp.isclose(val, -0.5)
-

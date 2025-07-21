@@ -2,12 +2,13 @@ from scipy.optimize import minimize
 import numpy as np
 from typing import Callable, Tuple, Optional, List, Union
 
+
 def minimize_lbfgs(
     objective: Callable[[np.ndarray], float],
     x0: np.ndarray,
     verbose: bool = False,
     maxfun: int = 15000,
-    bnds: Optional[Union[Tuple[Tuple[float, float]], List[Tuple[float, float]]]] = None
+    bnds: Optional[Union[Tuple[Tuple[float, float]], List[Tuple[float, float]]]] = None,
 ) -> Tuple[np.ndarray, float]:
     """
     Optimize a scalar-valued function using the L-BFGS-B algorithm with numerical gradients.
@@ -54,8 +55,16 @@ def minimize_lbfgs(
     """
 
     if verbose:
+
         def callback_fn(params):
-            print("Loss: {}".format(objective(params)[0] if isinstance(objective(params), tuple) else objective(params)))
+            print(
+                "Loss: {}".format(
+                    objective(params)[0]
+                    if isinstance(objective(params), tuple)
+                    else objective(params)
+                )
+            )
+
     else:
         callback_fn = None
 
@@ -63,10 +72,10 @@ def minimize_lbfgs(
         objective,
         x0,
         jac="2-point",  # Approximate gradient numerically
-        method='L-BFGS-B',
+        method="L-BFGS-B",
         bounds=bnds,
         callback=callback_fn,
-        options={'maxfun': maxfun}
+        options={"maxfun": maxfun},
     )
 
     print(f"optimization success: {result.success}")
@@ -75,12 +84,13 @@ def minimize_lbfgs(
 
     return result.x, result.fun
 
+
 def minimize_lbfgs_grad(
     objective: Callable[[np.ndarray], Tuple[float, np.ndarray]],
     x0: np.ndarray,
     verbose: bool = False,
     maxfun: int = 15000,
-    bnds: Optional[Union[Tuple[Tuple[float, float]], List[Tuple[float, float]]]] = None
+    bnds: Optional[Union[Tuple[Tuple[float, float]], List[Tuple[float, float]]]] = None,
 ) -> Tuple[np.ndarray, float]:
     """
     Optimize a scalar-valued function using the L-BFGS-B algorithm with **analytic gradients**.
@@ -128,8 +138,10 @@ def minimize_lbfgs_grad(
     """
 
     if verbose:
+
         def callback_fn(params):
             print("Loss: {}".format(objective(params)[0]))
+
     else:
         callback_fn = None
 
@@ -137,10 +149,10 @@ def minimize_lbfgs_grad(
         objective,
         x0,
         jac=True,  # Use analytic gradients
-        method='L-BFGS-B',
+        method="L-BFGS-B",
         bounds=bnds,
         callback=callback_fn,
-        options={'maxfun': maxfun, 'gtol': 1e-8}
+        options={"maxfun": maxfun, "gtol": 1e-8},
     )
 
     return result.x, result.fun

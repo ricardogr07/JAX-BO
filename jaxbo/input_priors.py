@@ -3,6 +3,7 @@ import jax.numpy as np
 from jax import random
 from jax.scipy.stats import multivariate_normal, uniform
 
+
 class Prior(abc.ABC):
     """
     Abstract base class for prior distributions.
@@ -35,6 +36,7 @@ class Prior(abc.ABC):
         """
         pass
 
+
 class uniform_prior(Prior):
     """
     Uniform prior distribution over a hyper-rectangle.
@@ -43,16 +45,18 @@ class uniform_prior(Prior):
         lb (np.ndarray): Lower bounds of the uniform distribution (shape: [dim]).
         ub (np.ndarray): Upper bounds of the uniform distribution (shape: [dim]).
     """
+
     def __init__(self, lb: np.ndarray = 0, ub: np.ndarray = 1):
         self.lb = lb
         self.ub = ub
         self.dim = lb.shape[0]
-    
-    def sample(self, rng_key: random.PRNGKey, N: int) -> np.ndarray: 
+
+    def sample(self, rng_key: random.PRNGKey, N: int) -> np.ndarray:
         return self.lb + (self.ub - self.lb) * random.uniform(rng_key, (N, self.dim))
-    
+
     def pdf(self, x: np.ndarray) -> np.ndarray:
         return np.sum(uniform.pdf(x, self.lb, self.ub - self.lb), axis=-1)
+
 
 class gaussian_prior(Prior):
     """
@@ -62,6 +66,7 @@ class gaussian_prior(Prior):
         mu (np.ndarray): Mean vector of the Gaussian (shape: [dim]).
         cov (np.ndarray): Covariance matrix of the Gaussian (shape: [dim, dim]).
     """
+
     def __init__(self, mu: np.ndarray, cov: np.ndarray):
         self.mu = mu
         self.cov = cov

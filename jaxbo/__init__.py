@@ -13,14 +13,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-__version__ = "0.1.1"
+from jaxbo import (
+    models,
+    input_priors,
+    utils,
+    test_functions,
+    kernels,
+    initializers,
+    optimizers,
+    acquisitions,
+    mcmc_models,
+)
 
-from jaxbo import models
-from jaxbo import input_priors
-from jaxbo import utils
-from jaxbo import test_functions
-from jaxbo import kernels
-from jaxbo import initializers
-from jaxbo import optimizers
-from jaxbo import acquisitions
-from jaxbo import mcmc_models
+__all__ = [
+    "models",
+    "input_priors",
+    "utils",
+    "test_functions",
+    "kernels",
+    "initializers",
+    "optimizers",
+    "acquisitions",
+    "mcmc_models",
+]

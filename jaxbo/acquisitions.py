@@ -6,6 +6,7 @@ from jax.scipy.stats import norm
 # See derivation in:
 # https://people.orie.cornell.edu/pfrazier/Presentations/2011.11.INFORMS.Tutorial.pdf
 
+
 @jit
 def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     """
@@ -21,10 +22,11 @@ def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     """
 
     delta = -(mean - best)
-    deltap = np.clip(delta, a_min=0.)
+    deltap = np.clip(delta, 0.0)
     Z = delta / std
     EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std * norm.pdf(Z)
     return -EI[0]
+
 
 @jit
 def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
@@ -40,14 +42,17 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative constrained expected improvement.
     """
     delta = -(mean[0, :] - best)
-    deltap = np.clip(delta, a_min=0.)
+    deltap = np.clip(delta, a_min=0.0)
     Z = delta / std[0, :]
     EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std[0, :] * norm.pdf(Z)
     constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
     return -EI[0] * constraints[0]
 
+
 @jit
-def LCBC(mean: np.ndarray, std: np.ndarray, kappa: float = 2.0, threshold: float = 3.0) -> float:
+def LCBC(
+    mean: np.ndarray, std: np.ndarray, kappa: float = 2.0, threshold: float = 3.0
+) -> float:
     """
     Lower Confidence Bound with Constraints.
 
@@ -64,8 +69,15 @@ def LCBC(mean: np.ndarray, std: np.ndarray, kappa: float = 2.0, threshold: float
     constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
     return lcb[0] * constraints[0]
 
+
 @jit
-def LW_LCBC(mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float = 2.0, threshold: float = 3.0) -> float:
+def LW_LCBC(
+    mean: np.ndarray,
+    std: np.ndarray,
+    weights: np.ndarray,
+    kappa: float = 2.0,
+    threshold: float = 3.0,
+) -> float:
     """
     Log-Weighted Lower Confidence Bound with Constraints.
 
@@ -83,6 +95,7 @@ def LW_LCBC(mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float
     constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
     return lcb[0] * constraints[0]
 
+
 @jit
 def LCB(mean: np.ndarray, std: np.ndarray, kappa: float = 2.0) -> float:
     """
@@ -99,6 +112,7 @@ def LCB(mean: np.ndarray, std: np.ndarray, kappa: float = 2.0) -> float:
     lcb = mean - kappa * std
     return lcb[0]
 
+
 @jit
 def US(std: np.ndarray) -> float:
     """
@@ -112,8 +126,11 @@ def US(std: np.ndarray) -> float:
     """
     return -std[0]
 
+
 @jit
-def LW_LCB(mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float = 2.0) -> float:
+def LW_LCB(
+    mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float = 2.0
+) -> float:
     """
     Log-Weighted Lower Confidence Bound.
 
@@ -129,6 +146,7 @@ def LW_LCB(mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float 
     lw_lcb = mean - kappa * std * weights
     return lw_lcb[0]
 
+
 @jit
 def LW_US(std: np.ndarray, weights: np.ndarray) -> float:
     """
@@ -143,6 +161,7 @@ def LW_US(std: np.ndarray, weights: np.ndarray) -> float:
     """
     lw_us = std * weights
     return -lw_us[0]
+
 
 @jit
 def CLSF(mean: np.ndarray, std: np.ndarray, kappa: float = 1.0) -> float:
@@ -160,8 +179,11 @@ def CLSF(mean: np.ndarray, std: np.ndarray, kappa: float = 1.0) -> float:
     acq = np.log(np.abs(mean) + 1e-8) - kappa * np.log(std + 1e-8)
     return acq[0]
 
+
 @jit
-def LW_CLSF(mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float = 1.0) -> float:
+def LW_CLSF(
+    mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float = 1.0
+) -> float:
     """
     Log-Weighted Classification Surrogate Function acquisition.
 
@@ -174,5 +196,7 @@ def LW_CLSF(mean: np.ndarray, std: np.ndarray, weights: np.ndarray, kappa: float
     Returns:
     float: Weighted CLSF value.
     """
-    acq = np.log(np.abs(mean) + 1e-8) - kappa * (np.log(std + 1e-8) + np.log(weights + 1e-8))
+    acq = np.log(np.abs(mean) + 1e-8) - kappa * (
+        np.log(std + 1e-8) + np.log(weights + 1e-8)
+    )
     return acq[0]
