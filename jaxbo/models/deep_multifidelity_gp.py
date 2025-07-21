@@ -1,14 +1,15 @@
-import numpy as onp
-import jax.numpy as np
-from jax import jit, random
-from jax.scipy.linalg import cholesky, solve_triangular
-from jax.flatten_util import ravel_pytree
 from functools import partial
+
+import jax.numpy as np
+import numpy as onp
+from jax import jit, random
+from jax.flatten_util import ravel_pytree
+from jax.scipy.linalg import cholesky, solve_triangular
 
 import jaxbo.initializers as initializers
 import jaxbo.utils as utils
-from jaxbo.optimizers import minimize_lbfgs
 from jaxbo.models.base_gpmodel import GPmodel
+from jaxbo.optimizers import minimize_lbfgs
 
 
 class DeepMultifidelityGP(GPmodel):
@@ -106,7 +107,6 @@ class DeepMultifidelityGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
@@ -121,7 +121,6 @@ class DeepMultifidelityGP(GPmodel):
         D = XH.shape[1]
         # Fetch params
         rho = gp_params[-3]
-        sigma_n_L = np.exp(gp_params[-2])
         sigma_n_H = np.exp(gp_params[-1])
         theta_L = np.exp(gp_params[: D + 1])
         theta_H = np.exp(gp_params[D + 1 : -3])

@@ -581,7 +581,7 @@ class MultiFidelitySingerCoxFunction(MultiFidelityTestFunction):
 
     def evaluate_low(self, x: np.ndarray) -> float:
         x = x.flatten()
-        x1, x2, x3, x4 = x[0], x[1], x[2], x[3]
+        x1, x2, x3, _ = x[0], x[1], x[2], x[3]
         high_val = -self.evaluate_high(x)
         y = (1 + np.sin(x1) / 10.0) * high_val - 2 * x1**2 + x2**2 + x3**2 + 0.5
         return -y

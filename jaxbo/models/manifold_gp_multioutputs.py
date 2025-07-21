@@ -125,7 +125,6 @@ class ManifoldGP_MultiOutputs(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
 
@@ -180,7 +179,8 @@ class ManifoldGP_MultiOutputs(GPmodel):
 
     @partial(jit, static_argnums=(0,))
     def constrained_acq_value_and_grad(self, x, **kwargs):
-        fun = lambda x: self.constrained_acquisition(x, **kwargs)
+        def fun(x_):
+            return self.constrained_acquisition(x_, **kwargs)
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads

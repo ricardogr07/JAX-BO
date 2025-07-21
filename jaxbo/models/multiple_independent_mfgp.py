@@ -93,7 +93,6 @@ class MultipleIndependentMFGP(GPmodel):
             y = batch["y"]
             # Fetch params
             rho = params[-3]
-            sigma_n_L = np.exp(params[-2])
             sigma_n_H = np.exp(params[-1])
             theta_L = np.exp(params[: D + 1])
             theta_H = np.exp(params[D + 1 : -3])
@@ -127,7 +126,6 @@ class MultipleIndependentMFGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
@@ -136,7 +134,6 @@ class MultipleIndependentMFGP(GPmodel):
         y = batch["y"]
         # Fetch params
         rho = params[-3]
-        sigma_n_L = np.exp(params[-2])
         sigma_n_H = np.exp(params[-1])
         theta_L = np.exp(params[: D + 1])
         theta_H = np.exp(params[D + 1 : -3])
@@ -187,7 +184,8 @@ class MultipleIndependentMFGP(GPmodel):
 
     @partial(jit, static_argnums=(0,))
     def constrained_acq_value_and_grad(self, x, **kwargs):
-        fun = lambda x: self.constrained_acquisition(x, **kwargs)
+        def fun(x):
+            return self.constrained_acquisition(x, **kwargs)
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads

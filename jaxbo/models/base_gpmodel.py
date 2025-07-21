@@ -1,20 +1,21 @@
-from typing import Any, Callable, Dict, Optional, Tuple
+from abc import ABC
+from functools import partial
+from typing import Any, Callable, Dict, Tuple
 
-import numpy as onp
 import jax.numpy as np
-from jax import jit, vjp, vmap, random
+import numpy as onp
+from jax import jit, random, vjp, vmap
 from jax.random import split
 from jax.scipy.linalg import solve_triangular
-from functools import partial
-from sklearn import mixture
 from pyDOE import lhs
-from abc import ABC
+from sklearn import mixture
 
-import jaxbo.kernels as kernels
 import jaxbo.acquisitions as acquisitions
+import jaxbo.kernels as kernels
 import jaxbo.utils as utils
-from jaxbo.utils import fit_kernel_density
 from jaxbo.optimizers import minimize_lbfgs_grad
+from jaxbo.utils import fit_kernel_density
+
 
 SUPPORTED_KERNELS: Dict[str, Callable] = {
     "RBF": kernels.RBF,
@@ -124,7 +125,8 @@ class GPmodel(ABC):
         """
 
         # Define a closure for NLML computation
-        fun = lambda p: self.likelihood(p, batch)
+        def fun(p):
+            return self.likelihood(p, batch)
 
         # Compute the value and the backward pass function
         primals, f_vjp = vjp(fun, params)

@@ -1,17 +1,18 @@
-import numpy as onp
-import jax.numpy as np
-from jax import jit, random, vjp
-from jax.scipy.linalg import cholesky, solve_triangular
-from jax.flatten_util import ravel_pytree
 from functools import partial
 
+import jax.numpy as np
+import numpy as onp
+from jax import jit, random, vjp
+from jax.flatten_util import ravel_pytree
+from jax.scipy.linalg import cholesky, solve_triangular
 from pyDOE import lhs
 
+import jaxbo.acquisitions as acquisitions
 import jaxbo.initializers as initializers
 import jaxbo.utils as utils
-import jaxbo.acquisitions as acquisitions
-from jaxbo.optimizers import minimize_lbfgs
 from jaxbo.models.base_gpmodel import GPmodel
+from jaxbo.optimizers import minimize_lbfgs
+
 
 
 class DeepMultifidelityGP_MultiOutputs(GPmodel):
@@ -132,7 +133,6 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
             D = XH.shape[1]
             # Fetch params
             rho = gp_params[-3]
-            sigma_n_L = np.exp(gp_params[-2])
             sigma_n_H = np.exp(gp_params[-1])
             theta_L = np.exp(gp_params[: D + 1])
             theta_H = np.exp(gp_params[D + 1 : -3])
@@ -165,7 +165,6 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
 
@@ -181,7 +180,6 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
         D = XH.shape[1]
         # Fetch params
         rho = gp_params[-3]
-        sigma_n_L = np.exp(gp_params[-2])
         sigma_n_H = np.exp(gp_params[-1])
         theta_L = np.exp(gp_params[: D + 1])
         theta_H = np.exp(gp_params[D + 1 : -3])
@@ -232,7 +230,8 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
 
     @partial(jit, static_argnums=(0,))
     def constrained_acq_value_and_grad(self, x, **kwargs):
-        fun = lambda x: self.constrained_acquisition(x, **kwargs)
+        def fun(x):
+            return self.constrained_acquisition(x, **kwargs)
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads

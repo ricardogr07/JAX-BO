@@ -119,8 +119,7 @@ class GP(GPmodel):
 
         x = (x - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         xp = (xp - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
-        X, y = batch["X"], batch["y"]
-        sigma_n = np.exp(params[-1])
+        X = batch["X"]
         theta = np.exp(params[:-1])
 
         k_pp = self.kernel(x, xp, theta)

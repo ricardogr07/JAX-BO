@@ -98,7 +98,6 @@ class HeterogeneousMultifidelityGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
@@ -111,7 +110,6 @@ class HeterogeneousMultifidelityGP(GPmodel):
         XL = sigmoid(self.net_apply(nn_params, XL))
         # Fetch params
         rho = gp_params[-3]
-        sigma_n_L = np.exp(gp_params[-2])
         sigma_n_H = np.exp(gp_params[-1])
         theta_L = gp_params[: D + 1]
         theta_H = gp_params[D + 1 : -3]

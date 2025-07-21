@@ -1,19 +1,16 @@
+from functools import partial
+from typing import Any, Dict
+
 import jax.numpy as np
 import jax.random as random
 from jax import vmap, jit
 from jax.scipy.linalg import cholesky, solve_triangular
-from jax.scipy.special import expit as sigmoid
 
-from jaxbo.models import GPmodel
-import jaxbo.kernels as kernels
-
-from numpyro import sample, deterministic, handlers
+from numpyro import sample
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
 
-from functools import partial
-from typing import Any, Dict, Callable
-
+from jaxbo.models import GPmodel
 
 class MCMCmodel(GPmodel):
     """
@@ -85,9 +82,8 @@ class MCMCmodel(GPmodel):
         # Vectorized predictions
         rng_keys = kwargs["rng_keys"]
         samples = kwargs["samples"]
-        sample_fn = lambda key, sample: self.posterior_sample(
-            key, sample, X_star, **kwargs
-        )
+        def sample_fn(key, sample):
+            return self.posterior_sample(key, sample, X_star, **kwargs)
         means, predictions = vmap(sample_fn)(rng_keys, samples)
         mean_prediction = np.mean(means, axis=0)
         std_prediction = np.std(predictions, axis=0)
@@ -600,12 +596,12 @@ class BayesianMLP(MCMCmodel):
         H = X
         # Forward pass
         num_layers = len(self.layers)
-        for l in range(0, num_layers - 2):
-            D_X, D_H = self.layers[l], self.layers[l + 1]
+        for layers in range(0, num_layers - 2):
+            D_X, D_H = self.layers[layers], self.layers[layers + 1]
             W = sample(
-                "w%d" % (l + 1), dist.Normal(np.zeros((D_X, D_H)), np.ones((D_X, D_H)))
+                "w%d" % (layers + 1), dist.Normal(np.zeros((D_X, D_H)), np.ones((D_X, D_H)))
             )
-            b = sample("b%d" % (l + 1), dist.Normal(np.zeros(D_H), np.ones(D_H)))
+            b = sample("b%d" % (layers + 1), dist.Normal(np.zeros(D_H), np.ones(D_H)))
             H = np.tanh(np.add(np.matmul(H, W), b))
         D_X, D_H = self.layers[-2], self.layers[-1]
         # Output mean
@@ -648,9 +644,9 @@ class BayesianMLP(MCMCmodel):
                 - sigma (np.ndarray): The standard deviation output of the network (after applying exp).
         """
         num_layers = len(self.layers)
-        for l in range(0, num_layers - 2):
-            W = sample["w%d" % (l + 1)]
-            b = sample["b%d" % (l + 1)]
+        for layer in range(0, num_layers - 2):
+            W = sample["w%d" % (layer + 1)]
+            b = sample["b%d" % (layer + 1)]
             H = np.tanh(np.add(np.matmul(H, W), b))
         W = sample["w%d_mu" % (num_layers - 1)]
         b = sample["b%d_mu" % (num_layers - 1)]

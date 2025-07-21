@@ -70,7 +70,6 @@ class MultifidelityGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
@@ -79,7 +78,6 @@ class MultifidelityGP(GPmodel):
         y = batch["y"]
         # Fetch params
         rho = params[-3]
-        sigma_n_L = np.exp(params[-2])
         sigma_n_H = np.exp(params[-1])
         theta_L = np.exp(params[: D + 1])
         theta_H = np.exp(params[D + 1 : -3])
@@ -108,7 +106,6 @@ class MultifidelityGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
@@ -118,15 +115,13 @@ class MultifidelityGP(GPmodel):
         # Fetch params
         rho = params[-3]
         sigma_n_L = np.exp(params[-2])
-        sigma_n_H = np.exp(params[-1])
         theta_L = np.exp(params[: D + 1])
-        theta_H = np.exp(params[D + 1 : -3])
         # Compute kernels
         k_pp = self.kernel(X_star, X_star, theta_L) + np.eye(X_star.shape[0]) * (
             sigma_n_L + 1e-8
         )
         psi1 = self.kernel(X_star, XL, theta_L)
-        psi1 = rho * self.kernel(X_star, XH, theta_L)
+        psi2 = rho * self.kernel(X_star, XH, theta_L)
         k_pX = np.hstack((psi1, psi2))
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
@@ -142,20 +137,15 @@ class MultifidelityGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         x = (x - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         xp = (xp - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
         XL, XH = batch["XL"], batch["XH"]
         D = batch["XH"].shape[1]
-        y = batch["y"]
         # Fetch params
         rho = params[-3]
-        sigma_n_L = np.exp(params[-2])
-        sigma_n_H = np.exp(params[-1])
         theta_L = np.exp(params[: D + 1])
-        theta_H = np.exp(params[D + 1 : -3])
         # Compute kernels
         k_pp = self.kernel(x, xp, theta_L)
         psi1 = self.kernel(x, XL, theta_L)
@@ -175,18 +165,14 @@ class MultifidelityGP(GPmodel):
         params = kwargs["params"]
         batch = kwargs["batch"]
         bounds = kwargs["bounds"]
-        norm_const = kwargs["norm_const"]
         # Normalize to [0,1]
         x = (x - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         xp = (xp - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
         # Fetch normalized training data
         XL, XH = batch["XL"], batch["XH"]
         D = batch["XH"].shape[1]
-        y = batch["y"]
         # Fetch params
         rho = params[-3]
-        sigma_n_L = np.exp(params[-2])
-        sigma_n_H = np.exp(params[-1])
         theta_L = np.exp(params[: D + 1])
         theta_H = np.exp(params[D + 1 : -3])
         # Compute kernels

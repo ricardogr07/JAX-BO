@@ -1,14 +1,11 @@
 import numpy as onp
 import jax.numpy as np
-from jax import vmap, jit, vjp, random
+from jax import jit, vjp, random
 from jax.scipy.linalg import cholesky, solve_triangular
 from functools import partial
-from sklearn import mixture
 from pyDOE import lhs
-from jax.scipy.stats import norm
 from typing import List, Dict, Tuple, Any
 
-import jaxbo.kernels as kernels
 import jaxbo.acquisitions as acquisitions
 import jaxbo.utils as utils
 import jaxbo.initializers as initializers
@@ -154,7 +151,8 @@ class MultipleIndependentOutputsGP(GPmodel):
     def constrained_acq_value_and_grad(
         self, x: np.ndarray, **kwargs: Any
     ) -> Tuple[np.ndarray, np.ndarray]:
-        fun = lambda x: self.constrained_acquisition(x, **kwargs)
+        def fun(x):
+            return self.constrained_acquisition(x, **kwargs)
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads

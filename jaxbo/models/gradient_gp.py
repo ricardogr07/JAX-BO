@@ -16,13 +16,15 @@ class GradientGP(GPmodel):
 
     @partial(jit, static_argnums=(0,))
     def k_dx2(self, x1, x2, params):
-        fun = lambda x2: self.kernel(x1, x2, params)
+        def fun(x2):
+            return self.kernel(x1, x2, params)
         g = jvp(fun, (x2,), (np.ones_like(x2),))[1]
         return g
 
     @partial(jit, static_argnums=(0,))
     def k_dx1dx2(self, x1, x2, params):
-        fun = lambda x1: self.k_dx2(x1, x2, params)
+        def fun(x1_):
+            return self.k_dx2(x1_, x2, params)
         g = jvp(fun, (x1,), (np.ones_like(x1),))[1]
         return g
 
@@ -73,7 +75,6 @@ class GradientGP(GPmodel):
     def predict(self, X_star, **kwargs):
         params = kwargs["params"]
         batch = kwargs["batch"]
-        norm_const = kwargs["norm_const"]
         # (do not Normalize!)
         # X_star = (X_star - norm_const['mu_X'])/norm_const['sigma_X']
         # Fetch training data
@@ -81,7 +82,6 @@ class GradientGP(GPmodel):
         y = batch["y"]
         # Fetch params
         sigma_n_F = np.exp(params[-2])
-        sigma_n_G = np.exp(params[-1])
         theta = np.exp(params[:-2])
         # Compute kernels
         k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
