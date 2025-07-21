@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1](https://github.com/ricardogr07/JAX-BO/compare/v0.1.0...v0.1.1) (2025-07-21)
+
+
+### Bug Fixes
+
+* fix release pipeline ([#8](https://github.com/ricardogr07/JAX-BO/issues/8)) ([d20575e](https://github.com/ricardogr07/JAX-BO/commit/d20575e0e408c93afc12a16abe34c0b7de264bbb))
+
 ## 0.1.0 (2025-07-21)
 
 
