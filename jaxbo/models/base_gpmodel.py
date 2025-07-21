@@ -17,12 +17,13 @@ from jaxbo.utils import fit_kernel_density
 from jaxbo.optimizers import minimize_lbfgs_grad
 
 SUPPORTED_KERNELS: Dict[str, Callable] = {
-    'RBF': kernels.RBF,
-    'Matern52': kernels.Matern52,
-    'Matern32': kernels.Matern32,
-    'Matern12': kernels.Matern12,
-    'RatQuad': kernels.RatQuad
+    "RBF": kernels.RBF,
+    "Matern52": kernels.Matern52,
+    "Matern32": kernels.Matern32,
+    "Matern12": kernels.Matern12,
+    "RatQuad": kernels.RatQuad,
 }
+
 
 class GPmodel(ABC):
     def __init__(self, options: Dict):
@@ -45,8 +46,10 @@ class GPmodel(ABC):
         """
 
         self.options = options
-        self.input_prior = options['input_prior']
-        kernel_name = options.get('kernel', 'RBF')  # fallback to 'RBF' if None or missing
+        self.input_prior = options["input_prior"]
+        kernel_name = options.get(
+            "kernel", "RBF"
+        )  # fallback to 'RBF' if None or missing
 
         if kernel_name not in SUPPORTED_KERNELS:
             raise NotImplementedError(
@@ -56,12 +59,14 @@ class GPmodel(ABC):
         self.kernel = SUPPORTED_KERNELS[kernel_name]
 
     @partial(jit, static_argnums=(0,))
-    def likelihood(self, params: np.ndarray, batch: Dict[str, np.ndarray]) -> np.ndarray:
+    def likelihood(
+        self, params: np.ndarray, batch: Dict[str, np.ndarray]
+    ) -> np.ndarray:
         """
         Compute the negative log-marginal likelihood (NLML) for a given set of hyperparameters.
 
-        This function evaluates how well a Gaussian Process with the given kernel parameters 
-        explains the observed data. It uses the Cholesky decomposition of the covariance matrix 
+        This function evaluates how well a Gaussian Process with the given kernel parameters
+        explains the observed data. It uses the Cholesky decomposition of the covariance matrix
         for numerical stability and efficiency.
 
         Args:
@@ -74,8 +79,8 @@ class GPmodel(ABC):
             np.ndarray: Scalar NLML value representing the data fit and model complexity.
         """
 
-        y = batch['y']                     # Target observations
-        N = y.shape[0]                     # Number of observations
+        y = batch["y"]  # Target observations
+        N = y.shape[0]  # Number of observations
 
         # Compute Cholesky decomposition of the kernel matrix
         L = self.compute_cholesky(params, batch)
@@ -85,17 +90,17 @@ class GPmodel(ABC):
 
         # Compute the Negative Log-Marginal Likelihood (NLML)
         # Terms: data fit, log determinant, and normalization constant
-        NLML = 0.5 * np.matmul(y.T, alpha) \
-             + np.sum(np.log(np.diag(L))) \
-             + 0.5 * N * np.log(2.0 * np.pi)
+        NLML = (
+            0.5 * np.matmul(y.T, alpha)
+            + np.sum(np.log(np.diag(L)))
+            + 0.5 * N * np.log(2.0 * np.pi)
+        )
 
         return NLML
 
     @partial(jit, static_argnums=(0,))
     def likelihood_value_and_grad(
-        self,
-        params: np.ndarray,
-        batch: Dict[str, np.ndarray]
+        self, params: np.ndarray, batch: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute both the value and the gradient of the negative log-marginal likelihood (NLML).
@@ -109,7 +114,7 @@ class GPmodel(ABC):
             batch (dict): Dictionary with training data, must include key 'y'.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray]: 
+            Tuple[np.ndarray, np.ndarray]:
                 - NLML value (scalar as 1-element array)
                 - Gradient array with same shape as `params`
 
@@ -130,80 +135,77 @@ class GPmodel(ABC):
         return primals, grads
 
     def fit_gmm(
-            self,
-            num_comp: int = 2,
-            N_samples: int = 10000,
-            **kwargs
-        ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-            """
-            Fit a Gaussian Mixture Model (GMM) to reweight the prior distribution over inputs
-            based on current model predictions. Used to enable prior-informed acquisition functions
-            such as LW-LCB or LW-US.
+        self, num_comp: int = 2, N_samples: int = 10000, **kwargs
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Fit a Gaussian Mixture Model (GMM) to reweight the prior distribution over inputs
+        based on current model predictions. Used to enable prior-informed acquisition functions
+        such as LW-LCB or LW-US.
 
-            This is done by:
-            1. Sampling uniformly over the input space.
-            2. Evaluating model predictions.
-            3. Estimating a kernel density for outputs.
-            4. Reweighting by prior / posterior to prioritize informative regions.
-            5. Sampling a new input set using the resulting importance weights.
-            6. Fitting a GMM to this resampled set.
+        This is done by:
+        1. Sampling uniformly over the input space.
+        2. Evaluating model predictions.
+        3. Estimating a kernel density for outputs.
+        4. Reweighting by prior / posterior to prioritize informative regions.
+        5. Sampling a new input set using the resulting importance weights.
+        6. Fitting a GMM to this resampled set.
 
-            Args:
-                num_comp (int): Number of Gaussian components in the GMM.
-                N_samples (int): Number of samples to use for reweighting and training the GMM.
-                **kwargs:
-                    - bounds (dict): Keys 'lb' and 'ub' defining lower and upper bounds of input domain.
-                    - rng_key (jax.random.PRNGKey): JAX random seed key for reproducibility.
-                    - norm_const (optional): Normalization constants, not used here but passed through.
-                    - All other kwargs are forwarded to `self.predict`.
+        Args:
+            num_comp (int): Number of Gaussian components in the GMM.
+            N_samples (int): Number of samples to use for reweighting and training the GMM.
+            **kwargs:
+                - bounds (dict): Keys 'lb' and 'ub' defining lower and upper bounds of input domain.
+                - rng_key (jax.random.PRNGKey): JAX random seed key for reproducibility.
+                - norm_const (optional): Normalization constants, not used here but passed through.
+                - All other kwargs are forwarded to `self.predict`.
 
-            Returns:
-                Tuple[np.ndarray, np.ndarray, np.ndarray]:
-                    - weights: GMM component weights.
-                    - means: Component means.
-                    - covariances: Component covariance matrices.
+        Returns:
+            Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                - weights: GMM component weights.
+                - means: Component means.
+                - covariances: Component covariance matrices.
 
-            Notes:
-                - This assumes self.predict returns only the predictive mean as [0]-th element.
-                - LHS is used for more uniform coverage of the input domain.
-            """
+        Notes:
+            - This assumes self.predict returns only the predictive mean as [0]-th element.
+            - LHS is used for more uniform coverage of the input domain.
+        """
 
-            bounds = kwargs['bounds']
-            lb = bounds['lb']
-            ub = bounds['ub']
-            rng_key = kwargs['rng_key']
-            dim = lb.shape[0]
+        bounds = kwargs["bounds"]
+        lb = bounds["lb"]
+        ub = bounds["ub"]
+        rng_key = kwargs["rng_key"]
+        dim = lb.shape[0]
 
-            # Sample data uniformly over the full input space
-            onp.random.seed(rng_key[0])
-            X = lb + (ub - lb) * lhs(dim, N_samples)
-            y = self.predict(X, **kwargs)[0]
+        # Sample data uniformly over the full input space
+        onp.random.seed(rng_key[0])
+        X = lb + (ub - lb) * lhs(dim, N_samples)
+        y = self.predict(X, **kwargs)[0]
 
-            # Sample inputs according to the prior distribution
-            rng_key = split(rng_key)[0]
-            onp.random.seed(rng_key[0])
-            X_samples = lb + (ub - lb) * lhs(dim, N_samples)
-            y_samples = self.predict(X_samples, **kwargs)[0]
+        # Sample inputs according to the prior distribution
+        rng_key = split(rng_key)[0]
+        onp.random.seed(rng_key[0])
+        X_samples = lb + (ub - lb) * lhs(dim, N_samples)
+        y_samples = self.predict(X_samples, **kwargs)[0]
 
-            # Estimate output densities from both prior and uniform samples
-            p_x = self.input_prior.pdf(X)
-            p_x_samples = self.input_prior.pdf(X_samples)
-            p_y = fit_kernel_density(y_samples, y, weights=p_x_samples)
+        # Estimate output densities from both prior and uniform samples
+        p_x = self.input_prior.pdf(X)
+        p_x_samples = self.input_prior.pdf(X_samples)
+        p_y = fit_kernel_density(y_samples, y, weights=p_x_samples)
 
-            # Importance weighting based on p(x)/p(y)
-            weights = p_x / p_y
-            weights /= np.sum(weights)  # Normalize to a valid probability distribution
+        # Importance weighting based on p(x)/p(y)
+        weights = p_x / p_y
+        weights /= np.sum(weights)  # Normalize to a valid probability distribution
 
-            # Resample data points using computed weights
-            indices = np.arange(N_samples)
-            resample_idx = onp.random.choice(indices, N_samples, p=weights.flatten())
-            X_train = (X[resample_idx] - lb) / (ub - lb)  # Scale to [0, 1]^D
+        # Resample data points using computed weights
+        indices = np.arange(N_samples)
+        resample_idx = onp.random.choice(indices, N_samples, p=weights.flatten())
+        X_train = (X[resample_idx] - lb) / (ub - lb)  # Scale to [0, 1]^D
 
-            # Fit GMM to resampled inputs
-            clf = mixture.GaussianMixture(n_components=num_comp, covariance_type='full')
-            clf.fit(X_train)
+        # Fit GMM to resampled inputs
+        clf = mixture.GaussianMixture(n_components=num_comp, covariance_type="full")
+        clf.fit(X_train)
 
-            return clf.weights_, clf.means_, clf.covariances_
+        return clf.weights_, clf.means_, clf.covariances_
 
     @partial(jit, static_argnums=(0,))
     def acquisition(self, x: np.ndarray, **kwargs: Any) -> float:
@@ -232,19 +234,19 @@ class GPmodel(ABC):
 
         # Predict mean and std for current input
         mean, std = self.predict(x, **kwargs)
-        criterion = self.options['criterion']
-        
+        criterion = self.options["criterion"]
+
         def lcb_wrapped():
-            kappa = kwargs['kappa']
+            kappa = kwargs["kappa"]
             return acquisitions.LCB(mean, std, kappa)
 
         def lw_lcb_wrapped():
-            kappa = kwargs['kappa']
+            kappa = kwargs["kappa"]
             weights = utils.compute_w_gmm(x, **kwargs)
             return acquisitions.LW_LCB(mean, std, weights, kappa)
 
         def ei_wrapped():
-            y_batch = kwargs['batch']['y']
+            y_batch = kwargs["batch"]["y"]
             best = np.min(y_batch)
             return acquisitions.EI(mean, std, best)
 
@@ -259,33 +261,33 @@ class GPmodel(ABC):
             return acquisitions.LW_US(std, weights)
 
         def clsf_wrapped():
-            kappa = kwargs['kappa']
-            norm_const = kwargs['norm_const']
-            denorm_mean = mean * norm_const['sigma_y'] + norm_const['mu_y']
-            denorm_std = std * norm_const['sigma_y']
+            kappa = kwargs["kappa"]
+            norm_const = kwargs["norm_const"]
+            denorm_mean = mean * norm_const["sigma_y"] + norm_const["mu_y"]
+            denorm_std = std * norm_const["sigma_y"]
             return acquisitions.CLSF(denorm_mean, denorm_std, kappa)
 
         def lw_clsf_wrapped():
-            kappa = kwargs['kappa']
-            norm_const = kwargs['norm_const']
-            denorm_mean = mean * norm_const['sigma_y'] + norm_const['mu_y']
-            denorm_std = std * norm_const['sigma_y']
+            kappa = kwargs["kappa"]
+            norm_const = kwargs["norm_const"]
+            denorm_mean = mean * norm_const["sigma_y"] + norm_const["mu_y"]
+            denorm_std = std * norm_const["sigma_y"]
             weights = utils.compute_w_gmm(x, **kwargs)
             return acquisitions.LW_CLSF(denorm_mean, denorm_std, weights, kappa)
 
         def imse_wrapped():
-            rng_key = kwargs['rng_key']
-            bounds = kwargs['bounds']
-            lb, ub = bounds['lb'], bounds['ub']
+            rng_key = kwargs["rng_key"]
+            bounds = kwargs["bounds"]
+            lb, ub = bounds["lb"], bounds["ub"]
             dim = lb.shape[0]
             xp = lb + (ub - lb) * random.uniform(rng_key, (10000, dim))
             cov = self.posterior_covariance(x, xp, **kwargs)
             return np.mean(cov**2) / std**2
 
         def imse_l_wrapped():
-            rng_key = kwargs['rng_key']
-            bounds = kwargs['bounds']
-            lb, ub = bounds['lb'], bounds['ub']
+            rng_key = kwargs["rng_key"]
+            bounds = kwargs["bounds"]
+            lb, ub = bounds["lb"], bounds["ub"]
             dim = lb.shape[0]
             _, std_L = self.predict_L(x, **kwargs)
             xp = lb + (ub - lb) * random.uniform(rng_key, (10000, dim))
@@ -294,25 +296,29 @@ class GPmodel(ABC):
 
         # Dispatch table
         ACQUISITION_HANDLERS: Dict[str, Callable[[], float]] = {
-            'LCB': lcb_wrapped,
-            'LW-LCB': lw_lcb_wrapped,
-            'EI': ei_wrapped,
-            'US': us_wrapped,
-            'TS': ts_wrapped,
-            'LW-US': lw_us_wrapped,
-            'CLSF': clsf_wrapped,
-            'LW_CLSF': lw_clsf_wrapped,
-            'IMSE': imse_wrapped,
-            'IMSE_L': imse_l_wrapped,
+            "LCB": lcb_wrapped,
+            "LW-LCB": lw_lcb_wrapped,
+            "EI": ei_wrapped,
+            "US": us_wrapped,
+            "TS": ts_wrapped,
+            "LW-US": lw_us_wrapped,
+            "CLSF": clsf_wrapped,
+            "LW_CLSF": lw_clsf_wrapped,
+            "IMSE": imse_wrapped,
+            "IMSE_L": imse_l_wrapped,
         }
 
         if criterion not in ACQUISITION_HANDLERS:
-            raise NotImplementedError(f"Acquisition criterion '{criterion}' is not supported.")
+            raise NotImplementedError(
+                f"Acquisition criterion '{criterion}' is not supported."
+            )
 
         return ACQUISITION_HANDLERS[criterion]()
 
     @partial(jit, static_argnums=(0,))
-    def acq_value_and_grad(self, x: np.ndarray, **kwargs: Any) -> Tuple[np.ndarray, np.ndarray]:
+    def acq_value_and_grad(
+        self, x: np.ndarray, **kwargs: Any
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Compute the acquisition function value and its gradient at a given input point x.
 
@@ -329,6 +335,7 @@ class GPmodel(ABC):
                 - primals: The acquisition function value at `x`.
                 - grads: Gradient of the acquisition function with respect to `x`.
         """
+
         # Define acquisition function as a function of x
         def acquisition_fn(xi: np.ndarray) -> np.ndarray:
             return self.acquisition(xi, **kwargs)
@@ -339,7 +346,9 @@ class GPmodel(ABC):
 
         return primals, grads
 
-    def compute_next_point_lbfgs(self, num_restarts: int = 10, **kwargs: Any) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    def compute_next_point_lbfgs(
+        self, num_restarts: int = 10, **kwargs: Any
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Optimize the acquisition function using L-BFGS-B with multiple random restarts.
 
@@ -367,12 +376,12 @@ class GPmodel(ABC):
             return onp.array(value), onp.array(grads)
 
         # Extract bounds and dimensionality
-        bounds = kwargs['bounds']
-        lb, ub = bounds['lb'], bounds['ub']
+        bounds = kwargs["bounds"]
+        lb, ub = bounds["lb"], bounds["ub"]
         dim = lb.shape[0]
 
         # Generate initial points using Latin Hypercube Sampling
-        rng_key = kwargs['rng_key']
+        rng_key = kwargs["rng_key"]
         onp.random.seed(rng_key[0])  # Deterministic initialization
         initial_points = lb + (ub - lb) * lhs(dim, num_restarts)
 
@@ -383,16 +392,18 @@ class GPmodel(ABC):
         solutions = []
         scores = []
         for i in range(num_restarts):
-            pos, val = minimize_lbfgs_grad(objective, initial_points[i, :], bnds=dom_bounds)
+            pos, val = minimize_lbfgs_grad(
+                objective, initial_points[i, :], bnds=dom_bounds
+            )
             solutions.append(pos)
             scores.append(val)
 
         loc = np.vstack(solutions)  # Shape: (num_restarts, D)
-        acq = np.vstack(scores)     # Shape: (num_restarts, 1)
+        acq = np.vstack(scores)  # Shape: (num_restarts, 1)
 
         # Select the point with the best acquisition score
         idx_best = np.argmin(acq)
-        x_new = loc[idx_best:idx_best + 1, :]  # Shape: (1, D)
+        x_new = loc[idx_best : idx_best + 1, :]  # Shape: (1, D)
 
         return x_new, acq, loc
 
@@ -416,6 +427,6 @@ class GPmodel(ABC):
 
         # Select the candidate with the lowest acquisition value
         best_index = np.argmin(acq_values)
-        x_new = X_cand[best_index:best_index + 1, :]  # Keep 2D shape
+        x_new = X_cand[best_index : best_index + 1, :]  # Keep 2D shape
 
         return x_new

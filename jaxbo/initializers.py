@@ -3,10 +3,8 @@ from jax import random
 from jax.random import PRNGKey
 import numpy as onp
 
-def random_init_GP(
-    rng_key: PRNGKey,
-    dim: int
-    ) -> onp.ndarray:
+
+def random_init_GP(rng_key: PRNGKey, dim: int) -> onp.ndarray:
     """
     Initializes random hyperparameters for a Gaussian Process (GP) model.
 
@@ -24,10 +22,8 @@ def random_init_GP(
     hyp = np.concatenate([logsigma_f, loglength, logsigma_n])
     return hyp
 
-def random_init_MultifidelityGP(
-    rng_key: PRNGKey,
-    dim: int
-) -> onp.ndarray:
+
+def random_init_MultifidelityGP(rng_key: PRNGKey, dim: int) -> onp.ndarray:
     """
     Initializes hyperparameters for a multifidelity Gaussian Process (GP) model with random values.
 
@@ -62,17 +58,21 @@ def random_init_MultifidelityGP(
     rho = 5.0 * random.normal(rng_key, (1,))
     logsigma_nL = np.array([-4.0]) + random.normal(key1, (1,))
     logsigma_nH = np.array([-4.0]) + random.normal(key2, (1,))
-    hyp = np.concatenate([
-        logsigma_fL, loglength_L,
-        logsigma_fH, loglength_H,
-        rho, logsigma_nL, logsigma_nH
-    ])
+    hyp = np.concatenate(
+        [
+            logsigma_fL,
+            loglength_L,
+            logsigma_fH,
+            loglength_H,
+            rho,
+            logsigma_nL,
+            logsigma_nH,
+        ]
+    )
     return hyp
 
-def random_init_GradientGP(
-    rng_key: PRNGKey,
-    dim: int
-) -> onp.ndarray:
+
+def random_init_GradientGP(rng_key: PRNGKey, dim: int) -> onp.ndarray:
     """
     Initializes random hyperparameters for a Gaussian Process (GP) model with gradient observations.
 
@@ -92,10 +92,8 @@ def random_init_GradientGP(
     hyp = np.concatenate([logsigma_f, loglength, logsigma_n_F, logsigma_n_G])
     return hyp
 
-def random_init_SparseGP(
-    rng_key: PRNGKey,
-    dim: int
-) -> onp.ndarray:
+
+def random_init_SparseGP(rng_key: PRNGKey, dim: int) -> onp.ndarray:
     """
     Initializes random hyperparameters for a Sparse Gaussian Process (GP) model.
 

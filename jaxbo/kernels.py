@@ -1,7 +1,10 @@
 import jax.numpy as np
 from jax import jit
 
-def _pairwise_diff_squared(x1: np.ndarray, x2: np.ndarray, lengthscales: np.ndarray) -> np.ndarray:
+
+def _pairwise_diff_squared(
+    x1: np.ndarray, x2: np.ndarray, lengthscales: np.ndarray
+) -> np.ndarray:
     """
     Computes squared differences between all pairs of inputs scaled by the lengthscales.
 
@@ -15,6 +18,7 @@ def _pairwise_diff_squared(x1: np.ndarray, x2: np.ndarray, lengthscales: np.ndar
     """
     diffs = np.expand_dims(x1 / lengthscales, 1) - np.expand_dims(x2 / lengthscales, 0)
     return np.sum(diffs**2, axis=2)
+
 
 @jit
 def RBF(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
@@ -34,6 +38,7 @@ def RBF(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
     r2 = _pairwise_diff_squared(x1, x2, lengthscales)
     return output_scale * np.exp(-0.5 * r2)
 
+
 @jit
 def Matern52(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
     """
@@ -50,7 +55,12 @@ def Matern52(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
     output_scale = params[0]
     lengthscales = params[1:]
     r2 = _pairwise_diff_squared(x1, x2, lengthscales)
-    return output_scale * (1.0 + np.sqrt(5.0*r2 + 1e-12) + 5.0*r2/3.0) * np.exp(-np.sqrt(5.0*r2 + 1e-12))
+    return (
+        output_scale
+        * (1.0 + np.sqrt(5.0 * r2 + 1e-12) + 5.0 * r2 / 3.0)
+        * np.exp(-np.sqrt(5.0 * r2 + 1e-12))
+    )
+
 
 @jit
 def Matern32(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
@@ -68,7 +78,12 @@ def Matern32(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
     output_scale = params[0]
     lengthscales = params[1:]
     r2 = _pairwise_diff_squared(x1, x2, lengthscales)
-    return output_scale * (1.0 + np.sqrt(3.0*r2 + 1e-12)) * np.exp(-np.sqrt(3.0*r2 + 1e-12))
+    return (
+        output_scale
+        * (1.0 + np.sqrt(3.0 * r2 + 1e-12))
+        * np.exp(-np.sqrt(3.0 * r2 + 1e-12))
+    )
+
 
 @jit
 def Matern12(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
@@ -87,6 +102,7 @@ def Matern12(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:
     lengthscales = params[1:]
     r2 = _pairwise_diff_squared(x1, x2, lengthscales)
     return output_scale * np.exp(-np.sqrt(r2 + 1e-12))
+
 
 @jit
 def RatQuad(x1: np.ndarray, x2: np.ndarray, params: np.ndarray) -> np.ndarray:

@@ -24,19 +24,21 @@ from .deep_multifidelity_gp_multioutputs import DeepMultifidelityGP_MultiOutputs
 from .gradient_gp import GradientGP
 from .multiple_independent_mfgp import MultipleIndependentMFGP
 from .heterogeneous_multifidelity_gp import HeterogeneousMultifidelityGP
-from .multiple_independent_heterogeneous_mfgp import MultipleIndependentHeterogeneousMFGP
+from .multiple_independent_heterogeneous_mfgp import (
+    MultipleIndependentHeterogeneousMFGP,
+)
 
 __all__ = [
-    'GPmodel',
-    'GP',
-    'MultipleIndependentOutputsGP', 
-    'ManifoldGP', 
-    'ManifoldGP_MultiOutputs',
-    'MultifidelityGP',
-    'DeepMultifidelityGP',
-    'DeepMultifidelityGP_MultiOutputs', 
-    'GradientGP', 
-    'MultipleIndependentMFGP',
-    'HeterogeneousMultifidelityGP',
-    'MultipleIndependentHeterogeneousMFGP'
+    "GPmodel",
+    "GP",
+    "MultipleIndependentOutputsGP",
+    "ManifoldGP",
+    "ManifoldGP_MultiOutputs",
+    "MultifidelityGP",
+    "DeepMultifidelityGP",
+    "DeepMultifidelityGP_MultiOutputs",
+    "GradientGP",
+    "MultipleIndependentMFGP",
+    "HeterogeneousMultifidelityGP",
+    "MultipleIndependentHeterogeneousMFGP",
 ]

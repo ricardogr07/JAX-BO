@@ -3,6 +3,7 @@ from typing import Callable, final
 import jax.numpy as np
 from jaxbo.input_priors import uniform_prior, gaussian_prior, Prior
 
+
 class TestFunction(ABC):
     """
     Abstract base class for test functions with prior, dimension, and domain bounds.
@@ -32,6 +33,7 @@ class TestFunction(ABC):
         """
         return iter((self.evaluate, self.prior, self.dim, self.lb, self.ub))
 
+
 class MultiFidelityTestFunction(TestFunction):
     """
     Abstract class for test functions with both low- and high-fidelity variants.
@@ -49,25 +51,40 @@ class MultiFidelityTestFunction(TestFunction):
         pass
 
     def evaluate(self, x: np.ndarray) -> float:
-        raise NotImplementedError("Use evaluate_low or evaluate_high for multi-fidelity functions.")
+        raise NotImplementedError(
+            "Use evaluate_low or evaluate_high for multi-fidelity functions."
+        )
 
-    def __iter__(self) -> tuple[tuple[Callable, Callable], Prior, int, np.ndarray, np.ndarray]:
-        return iter(((self.evaluate_low, self.evaluate_high), self.prior, self.dim, self.lb, self.ub))
+    def __iter__(
+        self,
+    ) -> tuple[tuple[Callable, Callable], Prior, int, np.ndarray, np.ndarray]:
+        return iter(
+            (
+                (self.evaluate_low, self.evaluate_high),
+                self.prior,
+                self.dim,
+                self.lb,
+                self.ub,
+            )
+        )
+
 
 @final
 class OakleyFunction(TestFunction):
     """
     Oakley function (2D) with a Gaussian prior centered at the origin.
     """
+
     def __init__(self):
         dim = 2
         lb = -4.0 * np.ones(dim)
-        ub =  4.0 * np.ones(dim)
+        ub = 4.0 * np.ones(dim)
         prior = gaussian_prior(np.zeros(dim), np.eye(dim))
         super().__init__(dim, lb, ub, prior)
 
     def evaluate(self, x: np.ndarray) -> float:
         return 5.0 + x[0] + x[1] + 2.0 * np.cos(x[0]) + 2.0 * np.sin(x[1])
+
 
 @final
 class MichalewiczFunction(TestFunction):
@@ -95,8 +112,12 @@ class MichalewiczFunction(TestFunction):
         Returns:
             float: Function value.
         """
-        y = sum(np.sin(x[i]) * np.sin((i + 1) * x[i]**2 / np.pi)**(2 * self._m) for i in range(self.dim))
+        y = sum(
+            np.sin(x[i]) * np.sin((i + 1) * x[i] ** 2 / np.pi) ** (2 * self._m)
+            for i in range(self.dim)
+        )
         return -y
+
 
 @final
 class AckleyFunction(TestFunction):
@@ -130,6 +151,7 @@ class AckleyFunction(TestFunction):
         term2 = -np.exp(np.sum(np.cos(c * x)) / self.dim)
         return term1 + term2 + a + np.exp(1.0)
 
+
 @final
 class BirdFunction(TestFunction):
     """
@@ -155,10 +177,11 @@ class BirdFunction(TestFunction):
         """
         x1, x2 = x[0], x[1]
         return (
-            np.sin(x1) * np.exp((1 - np.cos(x2))**2)
-            + np.cos(x2) * np.exp((1 - np.sin(x1))**2)
-            + (x1 - x2)**2
+            np.sin(x1) * np.exp((1 - np.cos(x2)) ** 2)
+            + np.cos(x2) * np.exp((1 - np.sin(x1)) ** 2)
+            + (x1 - x2) ** 2
         )
+
 
 @final
 class RosenbrockFunction(TestFunction):
@@ -178,11 +201,13 @@ class RosenbrockFunction(TestFunction):
         y -= 400.0 * np.exp(-((x[0] + 1.0) ** 2 + (x[1] + 1.0) ** 2) / 0.1)
         return y
 
+
 @final
 class BraninFunction(TestFunction):
     """
     Branin function (2D) with a uniform prior.
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-5.0, 0.0])
@@ -192,20 +217,22 @@ class BraninFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         a = 1.0
-        b = 5.1 / (4 * np.pi ** 2)
+        b = 5.1 / (4 * np.pi**2)
         c = 5 / np.pi
         r = 6
         s = 10
         t = 1 / (8 * np.pi)
         x1, x2 = x[0], x[1]
-        y = a * (x2 - b * x1 ** 2 + c * x1 - r) ** 2 + s * (1 - t) * np.cos(x1) + s
+        y = a * (x2 - b * x1**2 + c * x1 - r) ** 2 + s * (1 - t) * np.cos(x1) + s
         return y
+
 
 @final
 class ModifiedBraninFunction(TestFunction):
     """
     Modified Branin function (2D) with a uniform prior.
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-5.0, 0.0])
@@ -215,23 +242,25 @@ class ModifiedBraninFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         a = 1.0
-        b = 5.1 / (4 * np.pi ** 2)
+        b = 5.1 / (4 * np.pi**2)
         c = 5 / np.pi
         r = 6
         s = 10
         t = 1 / (8 * np.pi)
         x1, x2 = x[0], x[1]
-        f1 = a * (x2 - b * x1 ** 2 + c * x1 - r) ** 2
+        f1 = a * (x2 - b * x1**2 + c * x1 - r) ** 2
         f2 = s * (1 - t) * np.cos(x1) * np.cos(x2)
-        f3 = np.log(x1 ** 2 + x2 ** 2 + 1)
+        f3 = np.log(x1**2 + x2**2 + 1)
         y = -1 / (f1 + f2 + f3 + s)
         return y
+
 
 @final
 class UrsemWavesFunction(TestFunction):
     """
     Ursem Waves function (2D) with a uniform prior.
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-0.9, -1.2])
@@ -241,16 +270,18 @@ class UrsemWavesFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         x1, x2 = x[0], x[1]
-        u = -0.9 * x1 ** 2
-        v = (x2 ** 2 - 4.5 * x2 ** 2) * x1 * x2
-        w = 4.7 * np.cos(3 * x1 - x2 ** 2 * (2 + x1)) * np.sin(2.5 * np.pi * x1)
+        u = -0.9 * x1**2
+        v = (x2**2 - 4.5 * x2**2) * x1 * x2
+        w = 4.7 * np.cos(3 * x1 - x2**2 * (2 + x1)) * np.sin(2.5 * np.pi * x1)
         return u + v + w
+
 
 @final
 class HimmelblauFunction(TestFunction):
     """
     Himmelblau function (2D) with a uniform prior.
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-6.0, -6.0])
@@ -260,14 +291,16 @@ class HimmelblauFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         x1, x2 = x[0], x[1]
-        y = (x1 ** 2 + x2 - 11) ** 2 + (x1 + x2 ** 2 - 7) ** 2
+        y = (x1**2 + x2 - 11) ** 2 + (x1 + x2**2 - 7) ** 2
         return y
+
 
 @final
 class BukinFunction(TestFunction):
     """
     Bukin function (2D) with a uniform prior.
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-15.0, -3.0])
@@ -277,14 +310,16 @@ class BukinFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         x1, x2 = x[0], x[1]
-        y = 100 * np.sqrt(np.abs(x2 - 0.01 * x1 ** 2)) + 0.01 * np.abs(x1 + 10)
+        y = 100 * np.sqrt(np.abs(x2 - 0.01 * x1**2)) + 0.01 * np.abs(x1 + 10)
         return y
+
 
 @final
 class Hartmann6Function(TestFunction):
     """
     Hartmann 6D function with a uniform prior.
     """
+
     def __init__(self):
         dim = 6
         lb = np.zeros(dim)
@@ -294,23 +329,33 @@ class Hartmann6Function(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
-        A = np.array([[10, 3, 17, 3.5, 1.7, 8],
-                        [0.05, 10, 17, 0.1, 8, 14],
-                        [3, 3.5, 1.7, 10, 17, 8],
-                        [17, 8, 0.05, 10, 0.1, 14]])
-        P = 1e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886],
-                                [2329, 4135, 8307, 3736, 1004, 9991],
-                                [2348, 1451, 3522, 2883, 3047, 6650],
-                                [4047, 8828, 8732, 5743, 1091, 381]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array(
+            [
+                [10, 3, 17, 3.5, 1.7, 8],
+                [0.05, 10, 17, 0.1, 8, 14],
+                [3, 3.5, 1.7, 10, 17, 8],
+                [17, 8, 0.05, 10, 0.1, 14],
+            ]
+        )
+        P = 1e-4 * np.array(
+            [
+                [1312, 1696, 5569, 124, 8283, 5886],
+                [2329, 4135, 8307, 3736, 1004, 9991],
+                [2348, 1451, 3522, 2883, 3047, 6650],
+                [4047, 8828, 8732, 5743, 1091, 381],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha, np.diag(np.exp(-arg)))
         return y
+
 
 @final
 class ForresterFunction(MultiFidelityTestFunction):
     """
     Forrester 1D function (returns both low and high fidelity).
     """
+
     def __init__(self):
         dim = 1
         lb = np.zeros(dim)
@@ -320,13 +365,14 @@ class ForresterFunction(MultiFidelityTestFunction):
 
     def evaluate_high(self, x: np.ndarray) -> float:
         x = x.flatten()
-        y = (6.0*x - 2.0)**2 * np.sin(12.0*x - 4.0)
+        y = (6.0 * x - 2.0) ** 2 * np.sin(12.0 * x - 4.0)
         return y[0]
 
     def evaluate_low(self, x: np.ndarray) -> float:
         x = x.flatten()
         y = 0.5 * self.evaluate_high(x) + 10.0 * (x - 0.5) - 5.0
         return y[0]
+
 
 @final
 class JumpForresterFunction(MultiFidelityTestFunction):
@@ -343,7 +389,7 @@ class JumpForresterFunction(MultiFidelityTestFunction):
 
     def evaluate_low(self, x: np.ndarray) -> float:
         x = x.flatten()
-        y1 = (6.0 * x - 2.0)**2 * np.sin(12.0 * x - 4.0)
+        y1 = (6.0 * x - 2.0) ** 2 * np.sin(12.0 * x - 4.0)
         y2 = y1 + 3.0
         y = (x < 0.5) * y1 + (x > 0.5) * y2
         return y[0]
@@ -356,11 +402,12 @@ class JumpForresterFunction(MultiFidelityTestFunction):
         y = (x < 0.5) * y1 + (x > 0.5) * y2
         return y[0]
 
+
 @final
 class HeterogeneousForresterFunction(MultiFidelityTestFunction):
     """
     Heterogeneous Forrester function (2D version of the classic 1D function).
-    
+
     The high-fidelity function only depends on the first input dimension.
     The low-fidelity function is a scaled version of the high-fidelity one.
     """
@@ -375,16 +422,18 @@ class HeterogeneousForresterFunction(MultiFidelityTestFunction):
     def evaluate_high(self, x: np.ndarray) -> float:
         x = x.flatten()
         x1 = x[0]
-        return (6.0 * x1 - 2.0)**2 * np.sin(12.0 * x1 - 4.0)
+        return (6.0 * x1 - 2.0) ** 2 * np.sin(12.0 * x1 - 4.0)
 
     def evaluate_low(self, x: np.ndarray) -> float:
         return 0.5 * self.evaluate_high(x)
+
 
 @final
 class StepFunction(TestFunction):
     """
     Step function (1D).
     """
+
     def __init__(self):
         dim = 1
         lb = -np.ones(dim)
@@ -394,6 +443,7 @@ class StepFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         return np.heaviside(x, 0.5)[0]
+
 
 @final
 class MultiFidelityBraninFunction(MultiFidelityTestFunction):
@@ -417,16 +467,18 @@ class MultiFidelityBraninFunction(MultiFidelityTestFunction):
         s = 10.0
         t = 1.0 / (8 * np.pi)
         x1, x2 = x[0], x[1]
-        return a * (x2 - b * x1**2 + c * x1 - r)**2 + s * (1 - t) * np.cos(x1) + s
+        return a * (x2 - b * x1**2 + c * x1 - r) ** 2 + s * (1 - t) * np.cos(x1) + s
 
     def evaluate_low(self, x: np.ndarray) -> float:
         return 0.5 * self.evaluate_high(x) + 10.0 * (np.sum(x) - 0.5) - 5.0
+
 
 @final
 class SinglefidelityBraninFunction(TestFunction):
     """
     Singlefidelity Branin function (2D).
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-5.0, 0.0])
@@ -436,14 +488,15 @@ class SinglefidelityBraninFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         a = 1.0
-        b = 5.1 / (4*np.pi**2)
+        b = 5.1 / (4 * np.pi**2)
         c = 5 / np.pi
         r = 6
         s = 10
-        t = 1 / (8*np.pi)
+        t = 1 / (8 * np.pi)
         x1, x2 = x[0], x[1]
-        y = a * (x2 - b*x1**2 + c*x1 -r)**2 + s * (1-t) * np.cos(x1) + s
+        y = a * (x2 - b * x1**2 + c * x1 - r) ** 2 + s * (1 - t) * np.cos(x1) + s
         return y
+
 
 @final
 class MultiFidelityCamelbackFunction(MultiFidelityTestFunction):
@@ -461,20 +514,30 @@ class MultiFidelityCamelbackFunction(MultiFidelityTestFunction):
     def evaluate_high(self, x: np.ndarray) -> float:
         x = x.flatten()
         x1, x2 = x[0], x[1]
-        return (4.0 - 2.1 * x1**2 + x1**4 / 3.0) * x1**2 + x1 * x2 + (-4.0 + 4.0 * x2**2) * x2**2
+        return (
+            (4.0 - 2.1 * x1**2 + x1**4 / 3.0) * x1**2
+            + x1 * x2
+            + (-4.0 + 4.0 * x2**2) * x2**2
+        )
 
     def evaluate_low(self, x: np.ndarray) -> float:
         x = x.flatten()
         # Perturb the input
         x1, x2 = x[0] + 0.1, x[1] - 0.1
-        z = (4.0 - 2.1 * x1**2 + x1**4 / 3.0) * x1**2 + x1 * x2 + (-4.0 + 4.0 * x2**2) * x2**2
+        z = (
+            (4.0 - 2.1 * x1**2 + x1**4 / 3.0) * x1**2
+            + x1 * x2
+            + (-4.0 + 4.0 * x2**2) * x2**2
+        )
         return 0.75 * self.evaluate_high(x) + 0.375 * z - 0.125
+
 
 @final
 class SinglefidelityCamelbackFunction(TestFunction):
     """
     Singlefidelity Six-Hump Camelback function (2D).
     """
+
     def __init__(self):
         dim = 2
         lb = np.array([-2.0, -1.0])
@@ -484,8 +547,13 @@ class SinglefidelityCamelbackFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         x1, x2 = x[0], x[1]
-        y = (4.0 - 2.1 * x1 ** 2 + x1 ** 4 / 3.0) * x1 ** 2 + x1 * x2 + (-4.0 + 4.0 * x2 ** 2) * x2 ** 2
+        y = (
+            (4.0 - 2.1 * x1**2 + x1**4 / 3.0) * x1**2
+            + x1 * x2
+            + (-4.0 + 4.0 * x2**2) * x2**2
+        )
         return y
+
 
 @final
 class MultiFidelitySingerCoxFunction(MultiFidelityTestFunction):
@@ -506,7 +574,9 @@ class MultiFidelitySingerCoxFunction(MultiFidelityTestFunction):
     def evaluate_high(self, x: np.ndarray) -> float:
         x = x.flatten()
         x1, x2, x3, x4 = x[0], x[1], x[2], x[3]
-        y = 0.5 * (np.sqrt(x1**2 + (x2 + x3**2) * x4) - x1) + (x1 + 3 * x4) * np.exp(1 + np.sin(x3))
+        y = 0.5 * (np.sqrt(x1**2 + (x2 + x3**2) * x4) - x1) + (
+            x1 + 3 * x4
+        ) * np.exp(1 + np.sin(x3))
         return -y  # maximize y → minimize -y
 
     def evaluate_low(self, x: np.ndarray) -> float:
@@ -516,11 +586,13 @@ class MultiFidelitySingerCoxFunction(MultiFidelityTestFunction):
         y = (1 + np.sin(x1) / 10.0) * high_val - 2 * x1**2 + x2**2 + x3**2 + 0.5
         return -y
 
+
 @final
 class SinglefidelitySingerCoxFunction(TestFunction):
     """
     Singlefidelity Singer-Cox function (4D).
     """
+
     def __init__(self):
         dim = 4
         lb = np.zeros(dim)
@@ -530,14 +602,17 @@ class SinglefidelitySingerCoxFunction(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         x1, x2, x3, x4 = x[0], x[1], x[2], x[3]
-        y = 0.5 * (np.sqrt(x1**2 + (x2 + x3**2) * x4) - x1) + (x1 + 3 * x4) * np.exp(1 + np.sin(x3))
+        y = 0.5 * (np.sqrt(x1**2 + (x2 + x3**2) * x4) - x1) + (
+            x1 + 3 * x4
+        ) * np.exp(1 + np.sin(x3))
         return -y  # maximize y → minimize -y
+
 
 @final
 class MultiFidelityHartmann3Function(MultiFidelityTestFunction):
     """
     Multi-fidelity Hartmann function in 3D.
-    
+
     The high-fidelity version uses the standard Hartmann formulation.
     The low-fidelity version introduces perturbations to the alpha coefficients.
     """
@@ -552,18 +627,15 @@ class MultiFidelityHartmann3Function(MultiFidelityTestFunction):
     def evaluate_high(self, x: np.ndarray) -> float:
         x = x.flatten()
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
-        A = np.array([
-            [3, 10, 30],
-            [0.1, 10, 35],
-            [3, 10, 30],
-            [0.1, 10, 35]
-        ])
-        P = 1e-4 * np.array([
-            [3689, 1170, 2673],
-            [4699, 4387, 7470],
-            [1091, 8732, 5547],
-            [381, 5743, 8828]
-        ])
+        A = np.array([[3, 10, 30], [0.1, 10, 35], [3, 10, 30], [0.1, 10, 35]])
+        P = 1e-4 * np.array(
+            [
+                [3689, 1170, 2673],
+                [4699, 4387, 7470],
+                [1091, 8732, 5547],
+                [381, 5743, 8828],
+            ]
+        )
         arg = np.sum(A * (x - P) ** 2, axis=1)
         return -np.sum(alpha * np.exp(-arg))
 
@@ -572,26 +644,25 @@ class MultiFidelityHartmann3Function(MultiFidelityTestFunction):
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
         delta = np.array([0.01, -0.01, -0.1, 0.1])
         alpha2 = alpha + (3 - 2) * delta
-        A = np.array([
-            [3, 10, 30],
-            [0.1, 10, 35],
-            [3, 10, 30],
-            [0.1, 10, 35]
-        ])
-        P = 1e-4 * np.array([
-            [3689, 1170, 2673],
-            [4699, 4387, 7470],
-            [1091, 8732, 5547],
-            [381, 5743, 8828]
-        ])
+        A = np.array([[3, 10, 30], [0.1, 10, 35], [3, 10, 30], [0.1, 10, 35]])
+        P = 1e-4 * np.array(
+            [
+                [3689, 1170, 2673],
+                [4699, 4387, 7470],
+                [1091, 8732, 5547],
+                [381, 5743, 8828],
+            ]
+        )
         arg = np.sum(A * (x - P) ** 2, axis=1)
         return -np.sum(alpha2 * np.exp(-arg))
+
 
 @final
 class SinglefidelityHartmann3Function(TestFunction):
     """
     Singlefidelity Hartmann 3D function.
     """
+
     def __init__(self):
         dim = 3
         lb = np.zeros(dim)
@@ -601,23 +672,26 @@ class SinglefidelityHartmann3Function(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
-        A = np.array([[3, 10, 30],
-                        [0.1, 10, 35],
-                        [3, 10, 30],
-                        [0.1, 10, 35]])
-        P = 1e-4 * np.array([[3689, 1170, 2673],
-                                [4699, 4387, 7470],
-                                [1091, 8732, 5547],
-                                [381, 5743, 8828]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array([[3, 10, 30], [0.1, 10, 35], [3, 10, 30], [0.1, 10, 35]])
+        P = 1e-4 * np.array(
+            [
+                [3689, 1170, 2673],
+                [4699, 4387, 7470],
+                [1091, 8732, 5547],
+                [381, 5743, 8828],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha, np.diag(np.exp(-arg)))
         return y
+
 
 @final
 class MultifidelityHartmann6Function(MultiFidelityTestFunction):
     """
     Multifidelity Hartmann 6D function.
     """
+
     def __init__(self):
         dim = 6
         lb = np.zeros(dim)
@@ -627,15 +701,23 @@ class MultifidelityHartmann6Function(MultiFidelityTestFunction):
 
     def evaluate_high(self, x: np.ndarray) -> float:
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
-        A = np.array([[10, 3, 17, 3.5, 1.7, 8],
-                        [0.05, 10, 17, 0.1, 8, 14],
-                        [3, 3.5, 1.7, 10, 17, 8],
-                        [17, 8, 0.05, 10, 0.1, 14]])
-        P = 1e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886],
-                                [2329, 4135, 8307, 3736, 1004, 9991],
-                                [2348, 1451, 3522, 2883, 3047, 6650],
-                                [4047, 8828, 8732, 5743, 1091, 381]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array(
+            [
+                [10, 3, 17, 3.5, 1.7, 8],
+                [0.05, 10, 17, 0.1, 8, 14],
+                [3, 3.5, 1.7, 10, 17, 8],
+                [17, 8, 0.05, 10, 0.1, 14],
+            ]
+        )
+        P = 1e-4 * np.array(
+            [
+                [1312, 1696, 5569, 124, 8283, 5886],
+                [2329, 4135, 8307, 3736, 1004, 9991],
+                [2348, 1451, 3522, 2883, 3047, 6650],
+                [4047, 8828, 8732, 5743, 1091, 381],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha, np.diag(np.exp(-arg)))
         return y
 
@@ -643,23 +725,33 @@ class MultifidelityHartmann6Function(MultiFidelityTestFunction):
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
         delta = np.array([0.01, -0.01, -0.1, 0.1])
         alpha2 = alpha + (3 - 2) * delta
-        A = np.array([[10, 3, 17, 3.5, 1.7, 8],
-                        [0.05, 10, 17, 0.1, 8, 14],
-                        [3, 3.5, 1.7, 10, 17, 8],
-                        [17, 8, 0.05, 10, 0.1, 14]])
-        P = 1e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886],
-                                [2329, 4135, 8307, 3736, 1004, 9991],
-                                [2348, 1451, 3522, 2883, 3047, 6650],
-                                [4047, 8828, 8732, 5743, 1091, 381]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array(
+            [
+                [10, 3, 17, 3.5, 1.7, 8],
+                [0.05, 10, 17, 0.1, 8, 14],
+                [3, 3.5, 1.7, 10, 17, 8],
+                [17, 8, 0.05, 10, 0.1, 14],
+            ]
+        )
+        P = 1e-4 * np.array(
+            [
+                [1312, 1696, 5569, 124, 8283, 5886],
+                [2329, 4135, 8307, 3736, 1004, 9991],
+                [2348, 1451, 3522, 2883, 3047, 6650],
+                [4047, 8828, 8732, 5743, 1091, 381],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha2, np.diag(np.exp(-arg)))
         return y
+
 
 @final
 class SinglefidelityHartmann6Function(TestFunction):
     """
     Singlefidelity Hartmann 6D function.
     """
+
     def __init__(self):
         dim = 6
         lb = np.zeros(dim)
@@ -669,23 +761,33 @@ class SinglefidelityHartmann6Function(TestFunction):
 
     def evaluate(self, x: np.ndarray) -> float:
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
-        A = np.array([[10, 3, 17, 3.5, 1.7, 8],
-                        [0.05, 10, 17, 0.1, 8, 14],
-                        [3, 3.5, 1.7, 10, 17, 8],
-                        [17, 8, 0.05, 10, 0.1, 14]])
-        P = 1e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886],
-                                [2329, 4135, 8307, 3736, 1004, 9991],
-                                [2348, 1451, 3522, 2883, 3047, 6650],
-                                [4047, 8828, 8732, 5743, 1091, 381]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array(
+            [
+                [10, 3, 17, 3.5, 1.7, 8],
+                [0.05, 10, 17, 0.1, 8, 14],
+                [3, 3.5, 1.7, 10, 17, 8],
+                [17, 8, 0.05, 10, 0.1, 14],
+            ]
+        )
+        P = 1e-4 * np.array(
+            [
+                [1312, 1696, 5569, 124, 8283, 5886],
+                [2329, 4135, 8307, 3736, 1004, 9991],
+                [2348, 1451, 3522, 2883, 3047, 6650],
+                [4047, 8828, 8732, 5743, 1091, 381],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha, np.diag(np.exp(-arg)))
         return y
+
 
 @final
 class MultifidelityHartmann6LevelsFunction(MultiFidelityTestFunction):
     """
     Multifidelity Hartmann 6D function with levels.
     """
+
     def __init__(self):
         dim = 6
         lb = np.zeros(dim)
@@ -695,15 +797,23 @@ class MultifidelityHartmann6LevelsFunction(MultiFidelityTestFunction):
 
     def evaluate_high(self, x: np.ndarray) -> float:
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
-        A = np.array([[10, 3, 17, 3.5, 1.7, 8],
-                        [0.05, 10, 17, 0.1, 8, 14],
-                        [3, 3.5, 1.7, 10, 17, 8],
-                        [17, 8, 0.05, 10, 0.1, 14]])
-        P = 1e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886],
-                                [2329, 4135, 8307, 3736, 1004, 9991],
-                                [2348, 1451, 3522, 2883, 3047, 6650],
-                                [4047, 8828, 8732, 5743, 1091, 381]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array(
+            [
+                [10, 3, 17, 3.5, 1.7, 8],
+                [0.05, 10, 17, 0.1, 8, 14],
+                [3, 3.5, 1.7, 10, 17, 8],
+                [17, 8, 0.05, 10, 0.1, 14],
+            ]
+        )
+        P = 1e-4 * np.array(
+            [
+                [1312, 1696, 5569, 124, 8283, 5886],
+                [2329, 4135, 8307, 3736, 1004, 9991],
+                [2348, 1451, 3522, 2883, 3047, 6650],
+                [4047, 8828, 8732, 5743, 1091, 381],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha, np.diag(np.exp(-arg)))
         return y
 
@@ -711,15 +821,22 @@ class MultifidelityHartmann6LevelsFunction(MultiFidelityTestFunction):
         alpha = np.array([1.0, 1.2, 3.0, 3.2])
         delta = np.array([0.01, -0.01, -0.1, 0.1])
         alpha2 = alpha + dm * delta
-        A = np.array([[10, 3, 17, 3.5, 1.7, 8],
-                        [0.05, 10, 17, 0.1, 8, 14],
-                        [3, 3.5, 1.7, 10, 17, 8],
-                        [17, 8, 0.05, 10, 0.1, 14]])
-        P = 1e-4 * np.array([[1312, 1696, 5569, 124, 8283, 5886],
-                                [2329, 4135, 8307, 3736, 1004, 9991],
-                                [2348, 1451, 3522, 2883, 3047, 6650],
-                                [4047, 8828, 8732, 5743, 1091, 381]])
-        arg = np.dot(A, (x-P).T**2)
+        A = np.array(
+            [
+                [10, 3, 17, 3.5, 1.7, 8],
+                [0.05, 10, 17, 0.1, 8, 14],
+                [3, 3.5, 1.7, 10, 17, 8],
+                [17, 8, 0.05, 10, 0.1, 14],
+            ]
+        )
+        P = 1e-4 * np.array(
+            [
+                [1312, 1696, 5569, 124, 8283, 5886],
+                [2329, 4135, 8307, 3736, 1004, 9991],
+                [2348, 1451, 3522, 2883, 3047, 6650],
+                [4047, 8828, 8732, 5743, 1091, 381],
+            ]
+        )
+        arg = np.dot(A, (x - P).T ** 2)
         y = -np.dot(alpha2, np.diag(np.exp(-arg)))
         return y
-
