@@ -4,14 +4,14 @@ on:
   release:
     types: [created]
   workflow_dispatch:
-    
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    environment: pypi  # Must match what you configured on PyPI
+    environment: pypi
 
     permissions:
-      id-token: write  # Required for OIDC
+      id-token: write
       contents: read
 
     steps:
@@ -20,8 +20,6 @@ jobs:
 
       - name: Set up Python
         uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
 
       - name: Install build tools
         run: |
