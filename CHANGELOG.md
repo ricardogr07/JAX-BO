@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## 0.1.0 (2025-07-21)
+
+
+### Bug Fixes
+
+* release-please pipeline ([#6](https://github.com/ricardogr07/JAX-BO/issues/6)) ([d8a69af](https://github.com/ricardogr07/JAX-BO/commit/d8a69afb496f4ae82fd8fb97e7e5105307ebc31b))
+
 ## [0.3.0] – 2025-05-28
 ### Added
 - Compatibility with Python 3.12 and latest `jax` / `jaxlib` releases
