@@ -297,8 +297,10 @@ def compute_w_gmm(x, **kwargs):
     ub = bounds["ub"]
     x = (x - lb) / (ub - lb)
     weights, means, covs = kwargs["gmm_vars"]
+
     def gmm_mode(w, mu, cov):
         return w * multivariate_normal.pdf(x, mu, cov)
+
     w = np.sum(vmap(gmm_mode)(weights, means, covs), axis=0)
     return w
 
@@ -343,10 +345,14 @@ def fit_kernel_density(X, xi, weights=None, bw=None):
             sc = gaussian_kde(X, weights=weights)
             bw = onp.sqrt(sc.covariance).flatten()[0]
         except (np.linalg.LinAlgError, ValueError) as e:
-            warnings.warn(f"KDE bandwidth estimation failed: {e}. Falling back to bw=1.0.")
+            warnings.warn(
+                f"KDE bandwidth estimation failed: {e}. Falling back to bw=1.0."
+            )
             bw = 1.0
         if bw < 1e-8:
-            warnings.warn(f"Estimated bandwidth {bw:.2e} is too small. Using bw=1.0 instead.")
+            warnings.warn(
+                f"Estimated bandwidth {bw:.2e} is too small. Using bw=1.0 instead."
+            )
             bw = 1.0
 
     kde_pdf_x, kde_pdf_y = FFTKDE(bw=bw).fit(X, weights).evaluate()

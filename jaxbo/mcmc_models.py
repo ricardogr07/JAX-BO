@@ -12,6 +12,7 @@ from numpyro.infer import MCMC, NUTS
 
 from jaxbo.models import GPmodel
 
+
 class MCMCmodel(GPmodel):
     """
     Base class for MCMC-based models, inheriting from GPmodel.
@@ -82,8 +83,10 @@ class MCMCmodel(GPmodel):
         # Vectorized predictions
         rng_keys = kwargs["rng_keys"]
         samples = kwargs["samples"]
+
         def sample_fn(key, sample):
             return self.posterior_sample(key, sample, X_star, **kwargs)
+
         means, predictions = vmap(sample_fn)(rng_keys, samples)
         mean_prediction = np.mean(means, axis=0)
         std_prediction = np.std(predictions, axis=0)
@@ -599,7 +602,8 @@ class BayesianMLP(MCMCmodel):
         for layers in range(0, num_layers - 2):
             D_X, D_H = self.layers[layers], self.layers[layers + 1]
             W = sample(
-                "w%d" % (layers + 1), dist.Normal(np.zeros((D_X, D_H)), np.ones((D_X, D_H)))
+                "w%d" % (layers + 1),
+                dist.Normal(np.zeros((D_X, D_H)), np.ones((D_X, D_H))),
             )
             b = sample("b%d" % (layers + 1), dist.Normal(np.zeros(D_H), np.ones(D_H)))
             H = np.tanh(np.add(np.matmul(H, W), b))

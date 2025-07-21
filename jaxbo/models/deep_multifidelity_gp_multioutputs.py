@@ -14,7 +14,6 @@ from jaxbo.models.base_gpmodel import GPmodel
 from jaxbo.optimizers import minimize_lbfgs
 
 
-
 class DeepMultifidelityGP_MultiOutputs(GPmodel):
 
     def __init__(self, options, layers):
@@ -232,6 +231,7 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
     def constrained_acq_value_and_grad(self, x, **kwargs):
         def fun(x):
             return self.constrained_acquisition(x, **kwargs)
+
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads

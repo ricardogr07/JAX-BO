@@ -18,6 +18,7 @@ class GradientGP(GPmodel):
     def k_dx2(self, x1, x2, params):
         def fun(x2):
             return self.kernel(x1, x2, params)
+
         g = jvp(fun, (x2,), (np.ones_like(x2),))[1]
         return g
 
@@ -25,6 +26,7 @@ class GradientGP(GPmodel):
     def k_dx1dx2(self, x1, x2, params):
         def fun(x1_):
             return self.k_dx2(x1_, x2, params)
+
         g = jvp(fun, (x1,), (np.ones_like(x1),))[1]
         return g
 

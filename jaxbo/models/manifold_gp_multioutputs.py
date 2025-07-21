@@ -181,6 +181,7 @@ class ManifoldGP_MultiOutputs(GPmodel):
     def constrained_acq_value_and_grad(self, x, **kwargs):
         def fun(x_):
             return self.constrained_acquisition(x_, **kwargs)
+
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads

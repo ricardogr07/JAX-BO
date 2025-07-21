@@ -153,6 +153,7 @@ class MultipleIndependentOutputsGP(GPmodel):
     ) -> Tuple[np.ndarray, np.ndarray]:
         def fun(x):
             return self.constrained_acquisition(x, **kwargs)
+
         primals, f_vjp = vjp(fun, x)
         grads = f_vjp(np.ones_like(primals))[0]
         return primals, grads
