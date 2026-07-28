@@ -15,7 +15,8 @@ runs:
         python-version: ${{ inputs.python-version }}
 
     - name: Install uv (cached)
-      uses: astral-sh/setup-uv@v9
+      # Full tag on purpose: setup-uv stopped maintaining major alias tags after v7.
+      uses: astral-sh/setup-uv@v9.0.0
       with:
         enable-cache: true
         cache-dependency-glob: |
