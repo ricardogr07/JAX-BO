@@ -3,7 +3,7 @@ import jax.numpy as np
 from jax import jit, vjp, random
 from jax.scipy.linalg import cholesky, solve_triangular
 from functools import partial
-from pyDOE import lhs
+from scipy.stats import qmc
 from typing import List, Dict, Tuple, Any
 
 import jaxbo.acquisitions as acquisitions
@@ -170,7 +170,8 @@ class MultipleIndependentOutputsGP(GPmodel):
         dim = lb.shape[0]
         rng_key = kwargs["rng_key"]
         onp.random.seed(rng_key[0])
-        x0 = lb + (ub - lb) * lhs(dim, num_restarts)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        x0 = lb + (ub - lb) * sampler.random(num_restarts)
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
 
         loc, acq = [], []

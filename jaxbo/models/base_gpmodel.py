@@ -7,7 +7,7 @@ import numpy as onp
 from jax import jit, random, vjp, vmap
 from jax.random import split
 from jax.scipy.linalg import solve_triangular
-from pyDOE import lhs
+from scipy.stats import qmc
 from sklearn import mixture
 
 import jaxbo.acquisitions as acquisitions
@@ -180,13 +180,15 @@ class GPmodel(ABC):
 
         # Sample data uniformly over the full input space
         onp.random.seed(rng_key[0])
-        X = lb + (ub - lb) * lhs(dim, N_samples)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        X = lb + (ub - lb) * sampler.random(N_samples)
         y = self.predict(X, **kwargs)[0]
 
         # Sample inputs according to the prior distribution
         rng_key = split(rng_key)[0]
         onp.random.seed(rng_key[0])
-        X_samples = lb + (ub - lb) * lhs(dim, N_samples)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        X_samples = lb + (ub - lb) * sampler.random(N_samples)
         y_samples = self.predict(X_samples, **kwargs)[0]
 
         # Estimate output densities from both prior and uniform samples
@@ -385,7 +387,8 @@ class GPmodel(ABC):
         # Generate initial points using Latin Hypercube Sampling
         rng_key = kwargs["rng_key"]
         onp.random.seed(rng_key[0])  # Deterministic initialization
-        initial_points = lb + (ub - lb) * lhs(dim, num_restarts)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        initial_points = lb + (ub - lb) * sampler.random(num_restarts)
 
         # Format bounds for SciPy optimizer
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))

@@ -9,7 +9,7 @@ import jaxbo.acquisitions as acquisitions
 import jaxbo.initializers as initializers
 import jaxbo.utils as utils
 from jaxbo.optimizers import minimize_lbfgs
-from pyDOE import lhs
+from scipy.stats import qmc
 
 from jaxbo.models.base_gpmodel import GPmodel
 
@@ -203,7 +203,8 @@ class ManifoldGP_MultiOutputs(GPmodel):
         dim = lb.shape[0]
 
         onp.random.seed(rng_key[0])
-        x0 = lb + (ub - lb) * lhs(dim, num_restarts)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        x0 = lb + (ub - lb) * sampler.random(num_restarts)
         # print("x0 for bfgs", x0)
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
         for i in range(num_restarts):

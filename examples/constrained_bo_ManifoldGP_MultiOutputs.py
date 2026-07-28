@@ -13,7 +13,7 @@ import jax
 jax.config.update("jax_enable_x64", True)
 
 from scipy.optimize import minimize
-from pyDOE import lhs
+from scipy.stats import qmc
 import matplotlib.pyplot as plt
 plt.close('all')
 from matplotlib import rc
@@ -156,12 +156,13 @@ gp_model = ManifoldGP_MultiOutputs(options, layers)
 bounds = {'lb': lb, 'ub': ub}
 
 # Initial training data for objective
-X_f = lb + (ub-lb)*lhs(dim, N_f)
+sampler = qmc.LatinHypercube(d=dim, seed=1234)
+X_f = lb + (ub-lb)*sampler.random(N_f)
 y_f = vmap(f)(X_f)
 y_f = y_f + noise_f*y_f_star.std(0)*onp.random.normal(0, 1, size=y_f.shape)
 
 # Initial training data for constraints
-X_c = lb + (ub-lb)*lhs(dim, N_c)
+X_c = lb + (ub-lb)*sampler.random(N_c)
 y1_c = vmap(constraint1)(X_c)
 y1_c = y1_c + noise_c*y1_c_star.std(0)*onp.random.normal(0, 1, size=y1_c.shape)
 

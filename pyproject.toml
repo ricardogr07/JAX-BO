@@ -21,7 +21,6 @@ dependencies = [
   "jaxlib",
   "scikit-learn",
   "KDEpy",
-  "pyDOE",
   "numpyro"
 ]
 
