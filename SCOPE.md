@@ -21,20 +21,22 @@ Two independent lines of evidence say the library is broken as shipped, and both
 
 A maintained, modern-JAX Bayesian optimization library with a small stable core and optional research extras. The core: exact GP regression, 5 kernels, the 10 classic acquisition functions plus a new batched scoring helper, input priors, and L-BFGS training. The extras: MCMC inference, the multifidelity/manifold model family, and the weighted-sampling machinery, each installable on demand and never paid for otherwise. It installs clean on pinned, tested jax versions, carries tests, benchmarks, executable notebooks, a Docker quickstart, and full open source hygiene. It is the BO engine for shelter-pulse and the ecg-purkinje-npe baseline, and a credible small library for anyone else.
 
-**Compatibility promise:** the shelter-pulse call pattern works unchanged in 0.2.0: `GP` dict options, `train(batch, rng_key, num_restarts)`, `predict(X_star, params=, batch=, bounds=)`, `EI(mu, std, best)`, `input_priors.uniform_prior`. Consumer ground truth (verified by grep, 2026-07-28): shelter-pulse (`shelterpulse/optimize/jaxbo_optimizer.py`) imports exactly `jaxbo.models.GP`, `jaxbo.acquisitions` (uses `EI`), and `jaxbo.input_priors` (uses `uniform_prior`), and hand-rolls a 256-candidate Python EI loop that `score_candidates` replaces. ecg-purkinje-npe has zero first-party jaxbo imports yet; it only declares the vendored copy as its optional `baseline` extra, and its planned baseline is the same GP + EI pattern the core serves.
+**Compatibility promise:** the shelter-pulse call pattern works unchanged in 0.2.0: `GP` dict options, `train(batch, rng_key, num_restarts)`, `predict(X_star, params=, batch=, bounds=)`, `EI(mu, std, best)`, `input_priors.uniform_prior`. **Normalization contract (as it exists today, callers must follow it):** `train` consumes `batch["X"]` exactly as given, so the caller passes an already normalized batch (unit cube via `utils.normalize`), while `predict` normalizes `X_star` internally against `bounds` and so takes raw-domain points (`jaxbo/models/gp_model.py:41-58, 85-94`). Pass normalized `batch`, raw `X_star`; mixing these up fails silently. Consumer ground truth (verified by grep, 2026-07-28): shelter-pulse (`shelterpulse/optimize/jaxbo_optimizer.py`) imports exactly `jaxbo.models.GP`, `jaxbo.acquisitions` (uses `EI`), and `jaxbo.input_priors` (uses `uniform_prior`), and hand-rolls a 256-candidate Python EI loop that `score_candidates` replaces. ecg-purkinje-npe has zero first-party jaxbo imports yet; it only declares the vendored copy as its optional `baseline` extra, and its planned baseline is the same GP + EI pattern the core serves.
 
 ## 3. Architecture: core + optional extras
 
 ```
-jaxbo/                  core, deps: jax, jaxlib, numpy, scipy
+jaxbo/                  core, target deps: jax, jaxlib, numpy, scipy
   gp.py                 GPmodel base + GP (Matern52 et al), train/predict
   kernels.py            5 kernels (jit): RBF, Matern52, Matern32, Matern12, RatQuad
   acquisitions.py       10 acquisitions + NEW score_candidates (vmap batched)
   optimizers.py         minimize_lbfgs / minimize_lbfgs_grad
   priors.py             uniform_prior, gaussian_prior et al
-  initializers.py       trimmed; LHS via scipy.stats.qmc.LatinHypercube (seedable)
+  initializers.py       trimmed; LHS via qmc.LatinHypercube seeded from the
+                        caller's rng_key (PR #44 pattern, see slice 1a)
   utils.py              trimmed
-  test_functions.py     kept (dependency-free, CI smoke + quickstart)
+  test_functions.py     kept (no deps beyond the jax core + input_priors,
+                        CI smoke + quickstart)
 jaxbo/mcmc/             extra [mcmc] (numpyro); MCMC GP class renamed, it no
                         longer shadows models.GP; lazy import, core never
                         imports it
@@ -42,14 +44,16 @@ jaxbo/multifidelity/    extra [multifidelity]: 6 MF models + 2 manifold models
                         + GradientGP + MultipleIndependentOutputsGP on a
                         shared base
 jaxbo/weights.py        extra [weighted] (scikit-learn, KDEpy): fit_gmm /
-                        fit_kernel_density; LW_* acquisitions stay in core and
-                        take precomputed weights as plain arguments
+                        fit_kernel_density plus the model-method weight paths
+                        (section 4, decision 7); LW_* pure functions stay in
+                        core taking precomputed weights as plain arguments;
+                        gmm_vars-driven flows move behind [weighted]
 [all] = mcmc + multifidelity + weighted
 ```
 
 Rules of the architecture:
 
-- **Core installs with exactly 4 dependencies** (`jax`, `jaxlib`, `numpy`, `scipy`) and `python -c "import jaxbo"` succeeds WITHOUT numpyro, scikit-learn, or KDEpy installed. Extras are lazy: importing `jaxbo` never triggers an extra's dependency; importing an extra without its dependency raises a clear error naming the `pip install jaxbo[extra]` fix.
+- **Core installs with exactly 4 dependencies** (`jax`, `jaxlib`, `numpy`, `scipy`) and `python -c "import jaxbo"` succeeds WITHOUT numpyro, scikit-learn, or KDEpy installed. Extras are lazy: importing `jaxbo` never triggers an extra's dependency; importing an extra without its dependency raises a clear error naming the `pip install jaxbo[extra]` fix. **This is the TARGET state that slices 2a/2b deliver, not the current one.** Today the core import graph reaches every extras dependency: `jaxbo/__init__.py:16-26` imports `mcmc_models` (numpyro) eagerly, `models/__init__.py:16-29` imports the full multifidelity/manifold/gradient/multiple-output family eagerly, `models/base_gpmodel.py:10-17` imports pyDOE and sklearn, and `utils.py:4-10` imports KDEpy and `jax.example_libraries.stax`. 2a/2b acceptance therefore includes: break the import graph so no core module transitively imports an extras dependency, specifically severing the `utils.py` sklearn/KDEpy/stax reach and splitting `models/__init__.py` so core exposes only `GPmodel` + `GP`.
 - Every surviving file: pyDOE gone, clip sites swept to positional, consistent `jnp` usage, type hints and docstrings (reposage s1 gates docstring coverage at 70%).
 - `serializable.py`'s MF param serialization moves with the multifidelity extra it serves.
 
@@ -64,8 +68,8 @@ These were v1's open questions. They are closed. Do not reopen them in PRs; a PR
 | 3 | jax pin | **`jax>=0.6,<0.11`** with matching jaxlib. CI exercises floor and latest; the ceiling is raised only on green CI. |
 | 4 | `score_candidates` | **Lands in 0.2.0**, in core `acquisitions`. It is the ergonomics friction that motivated the revamp; shipping it lets shelter-pulse delete its 256-candidate Python loop in the same bump. |
 | 5 | Examples | **MORE, not fewer.** v1's delete-examples proposal is reversed. The 13 existing notebooks get fixed and mapped core-vs-extras (core tutorials against 0.2.0 core; MF/manifold tutorials become the extras' documentation), plus a new 5-minute quickstart. Execution-gated in CI via pytest-nbmake (quickstart + one per extra). |
-| 6 | `test_functions` | **Kept in core.** Dependency-free, tested, used by CI smoke tests and the quickstart. |
-| 7 | Weighted machinery | **Moves to the `[weighted]` extra** (`jaxbo/weights.py`: `fit_gmm`, `fit_kernel_density`; deps scikit-learn + KDEpy). The `LW_*` acquisitions stay in core taking precomputed weights. |
+| 6 | `test_functions` | **Kept in core.** No dependencies beyond the jax core (it imports jax and `jaxbo.input_priors`), tested, used by CI smoke tests and the quickstart. |
+| 7 | Weighted machinery | **Moves to the `[weighted]` extra** (`jaxbo/weights.py`: `fit_gmm`, `fit_kernel_density`; deps scikit-learn + KDEpy). Today this machinery lives as model methods, not free functions, and the extraction covers that whole surface: `GPmodel.fit_gmm` (`base_gpmodel.py:139-210`, sklearn + pyDOE), the LW_* branches of `GPmodel.acquisition` that compute weights internally from `gmm_vars` via `utils.compute_w_gmm` (`base_gpmodel.py:245-278`, `utils.py:275-305`), and the constrained multifidelity variant `MultipleIndependentMFGP.fit_gmm` (`multiple_independent_mfgp.py:224-281`). The `LW_*` pure functions (`LW_LCB`, `LW_US`, `LW_CLSF`) stay in core taking precomputed weights as plain arguments; the `gmm_vars`-driven flows (criterion `LW_*` through `model.acquisition`) move behind `[weighted]` and raise a clear error naming `pip install jaxbo[weighted]` when used without it. |
 | 8 | Docker | **One quickstart image:** `jaxbo[all]` + jupyterlab + `examples/`, default CMD jupyter lab, `docker run -p 8888:8888 ghcr.io/ricardogr07/jaxbo`. GHCR publish wired into `release.yml`. |
 | 9 | Release | **0.2.0 via release-please**, changelog with an explicit Removed section covering every module that moved or was renamed. Conventional commits only; every future removal or signature change gets a changelog line before merge. |
 
@@ -111,11 +115,11 @@ Current hygiene surface: LICENSE only. 0.2.0 adds the full set:
 | | 0b reposage baseline committed (`docs/audits/`), fix list feeds the slices, re-run at RC | S |
 | | 0c Benchmark harness + `jax.profiler` trace, baseline numbers committed | M |
 | | 0d SCOPE v2 (this document) | S |
-| 1 mechanical unbreak (W1 to W2) | 1a pyDOE to `scipy.stats.qmc.LatinHypercube` everywhere (seedable, bonus over pyDOE), dependency deleted | S |
+| 1 mechanical unbreak (W1 to W2) | 1a pyDOE to `scipy.stats.qmc`: call sites hold a JAX `rng_key`, not an int seed, so the shipped pattern (PR #44) is `qmc.LatinHypercube(d=dim, seed=int(rng_key[0])).random(n)`; dependency deleted | S |
 | | 1b `clip(a_min=)` sweep to positional + grep guard in CI so it never returns | S |
 | | 1c Packaging: `jax>=0.6,<0.11` pin, `requires-python >= 3.10`, prune and declare deps, lockfile committed, classifiers, metadata | S |
-| 2 refactor to core + extras (W2) | 2a Core package restructure per section 3, lazy extras, exports, mcmc GP rename, docstrings + type hints to the 70% gate | L |
-| | 2b Extras subpackages moved + refactored on shared bases | L |
+| 2 refactor to core + extras (W2) | 2a Core package restructure per section 3, lazy extras, exports, mcmc GP rename, docstrings + type hints to the 70% gate. Acceptance adds: resolve or document the train/predict normalization asymmetry in the public API (section 2); break the core import graph so no core module transitively imports an extras dependency, severing `utils.py`'s sklearn/KDEpy/stax reach and splitting `models/__init__.py` (section 3) | L |
+| | 2b Extras subpackages moved + refactored on shared bases. Acceptance adds: extract the method-level weighted surface listed in decision 7 (`GPmodel.fit_gmm`, the `gmm_vars` LW_* acquisition branches, `MultipleIndependentMFGP.fit_gmm`); after the move, no core module imports sklearn or KDEpy | L |
 | | 2c `score_candidates` batched helper with shape-convention docs | M |
 | | 2d Model tests: GP train/predict round-trips (1D + 4D), extras import guards, EI sanity, `score_candidates` shapes; coverage on the 12 classes that today have none | M |
 | 3 optimization (W2 to W3) | 3a The section 5 candidates, each landing only with its benchmark delta | L |
@@ -133,7 +137,7 @@ Current hygiene surface: LICENSE only. 0.2.0 adds the full set:
 |---|---|---|
 | 1 | Declare missing distributions in pyproject (s0.env_spec) | 1c |
 | 2 | Generate and commit a lockfile (s0.lockfile) | 1c |
-| 3 | Seed the unseeded random call in `base_gpmodel.py` (s0.determinism) | 1a (seedable qmc LHS) + 2a |
+| 3 | Seed the unseeded random call in `base_gpmodel.py` (s0.determinism) | 1a (qmc LHS seeded from `rng_key`, PR #44) + 2a |
 | 4 | Docstring coverage 52% to 70%+ (s1.docs) | 2a + 2b |
 | 5 | Fix `import jaxbo` on clean install (s2.package) | 1a (pyDOE) + 2a (lazy numpyro) |
 | 6 | Make pytest collect tests (s3.suite) | 2d |
@@ -151,3 +155,16 @@ Current hygiene surface: LICENSE only. 0.2.0 adds the full set:
 | W2 to W3 | Optimization: phase 3, each change with its benchmark delta |
 | W3 | OSS + notebooks + Docker: phase 4 |
 | W5 | RC: re-audit targeting 6/6, final benchmark table, 0.2.0 released, both consumers validated (shims deleted, vendored copy replaced) |
+
+## Adversarial review log
+
+Reviewed 2026-07-28 by GitHub Codex (PR #14 review) plus a local Codex adversarial pass; findings verified against code before amending.
+
+1. HIGH, amended section 2: documented the train/predict normalization asymmetry as the current contract; added a resolve-or-document item to slice 2a.
+2. MED, amended sections 3 and 7: pyDOE replacement rewritten to the PR #44 pattern (`qmc.LatinHypercube(d=dim, seed=int(rng_key[0])).random(n)`), since call sites hold a JAX rng_key, not an int seed.
+3. HIGH, amended section 3: "exactly 4 dependencies" reframed as the 2a/2b TARGET; current import graph (pyDOE, sklearn, KDEpy, stax) named with file refs; import-graph break added to 2a acceptance.
+4. HIGH, amended section 3: lazy-extras claim reframed as target state; splitting the eager `models/__init__.py` added to 2a acceptance.
+5. MED, amended decision 7: extraction now covers the model-method weight paths; gmm_vars-driven LW_* flows move behind `[weighted]` with a clear error.
+6. MED, amended decision 7: method-level surface 2b must extract is listed explicitly, including the constrained multifidelity variant.
+7. LOW, acknowledged in `docs/audits/2026-07-28-reposage-baseline.md`: erratum appended noting the PyPI publisher is `release.yml`, not `release-please.yml`; the generated table is untouched.
+8. LOW, amended sections 3 and 4 (decision 6): "dependency-free" reworded to "no dependencies beyond the jax core" (it imports jax and `jaxbo.input_priors`).
