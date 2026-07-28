@@ -86,14 +86,38 @@ jobs:
           scope: ${{ needs.gate.outputs.docs_only == 'true' && 'docs' || 'full' }}
 
   test:
-    name: test (py${{ matrix.python-version }})
+    name: test (py${{ matrix.python-version }}, jax ${{ matrix.lane }})
     needs: gate
     if: needs.gate.outputs.core == 'true'
     runs-on: ubuntu-latest
+    # 3.13/3.14 lanes are advisory (continue-on-error) until they hold a green
+    # streak; promotion path: flip experimental to false for a version once its
+    # lanes have stayed green for a week of runs, making them blocking.
+    continue-on-error: ${{ matrix.experimental }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.12"]
+        # jax wheel reality per python version (PyPI metadata, checked 2026-07-28):
+        #   requires_python: jax 0.4.x to 0.6.x need >=3.10; 0.7.x to 0.10.x
+        #   need >=3.11; 0.11.0 needs >=3.12.
+        #   jaxlib wheels: cp310 ends at 0.6.2; cp311 ends at 0.10.2;
+        #   cp313 exists from 0.5.3; cp314 exists only from 0.7.2.
+        # floor = oldest installable jax per interpreter (0.5.3 everywhere it has
+        # wheels, 0.7.2 on 3.14). latest lanes are capped at jax<0.10 until #43
+        # (clip kwargs) and #44 (pyDOE) merge; the true latest to promote to is
+        # noted per lane. py3.10 is terminal at 0.6.2: no newer jax will ever
+        # support it, the cap changes nothing there.
+        include:
+          - { python-version: "3.10", lane: floor,  jax-spec: "jax==0.5.3", experimental: false }
+          - { python-version: "3.10", lane: latest, jax-spec: "jax==0.6.2", experimental: false } # terminal latest for 3.10
+          - { python-version: "3.11", lane: floor,  jax-spec: "jax==0.5.3", experimental: false }
+          - { python-version: "3.11", lane: latest, jax-spec: "jax<0.10",   experimental: false } # promote to jax==0.10.2 after #43/#44
+          - { python-version: "3.12", lane: floor,  jax-spec: "jax==0.5.3", experimental: false }
+          - { python-version: "3.12", lane: latest, jax-spec: "jax<0.10",   experimental: false } # promote to jax==0.11.0 after #43/#44
+          - { python-version: "3.13", lane: floor,  jax-spec: "jax==0.5.3", experimental: true }
+          - { python-version: "3.13", lane: latest, jax-spec: "jax<0.10",   experimental: true }  # promote to jax==0.11.0 after #43/#44
+          - { python-version: "3.14", lane: floor,  jax-spec: "jax==0.7.2", experimental: true }  # first jaxlib with cp314 wheels
+          - { python-version: "3.14", lane: latest, jax-spec: "jax<0.10",   experimental: true }  # promote to jax==0.11.0 after #43/#44
     steps:
       - uses: actions/checkout@v7
 
@@ -106,6 +130,7 @@ jobs:
         uses: ./.github/actions/test
         with:
           python-version: ${{ matrix.python-version }}
+          jax-spec: ${{ matrix.jax-spec }}
 
   bench-smoke:
     name: bench smoke
