@@ -1,0 +1,153 @@
+name: CI
+
+on:
+  # No base-branch filter on pull_request: stacked PRs (base = another feature
+  # branch) must get CI too, and the gate scopes work by changed paths anyway.
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  gate:
+    name: gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.flags.outputs.docs_only }}
+      core: ${{ steps.flags.outputs.core }}
+      bench: ${{ steps.flags.outputs.bench }}
+      ci_config: ${{ steps.filter.outputs.ci_config }}
+    steps:
+      # Checkout is needed for push events; paths-filter reads local git history there.
+      - uses: actions/checkout@v7
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2, pinned to a full commit SHA
+        with:
+          filters: |
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+            core:
+              - 'jaxbo/**'
+              - 'tests/**'
+              - 'pyproject.toml'
+              - 'tox.ini'
+            bench:
+              - 'benchmarks/**'
+            ci_config:
+              - '.github/**'
+
+      - name: Compute effective flags
+        id: flags
+        env:
+          DOCS: ${{ steps.filter.outputs.docs }}
+          CORE: ${{ steps.filter.outputs.core }}
+          BENCH: ${{ steps.filter.outputs.bench }}
+          CI_CONFIG: ${{ steps.filter.outputs.ci_config }}
+        run: |
+          # Gating map: .github/** runs everything; docs_only means markdown/docs
+          # changed and nothing else did.
+          core=false; bench=false; docs_only=false
+          if [ "$CORE" = "true" ] || [ "$CI_CONFIG" = "true" ]; then core=true; fi
+          if [ "$BENCH" = "true" ] || [ "$CI_CONFIG" = "true" ]; then bench=true; fi
+          if [ "$DOCS" = "true" ] && [ "$CORE" != "true" ] && [ "$BENCH" != "true" ] && [ "$CI_CONFIG" != "true" ]; then docs_only=true; fi
+          {
+            echo "core=$core"
+            echo "bench=$bench"
+            echo "docs_only=$docs_only"
+          } >> "$GITHUB_OUTPUT"
+          echo "flags: core=$core bench=$bench docs_only=$docs_only ci_config=$CI_CONFIG"
+
+  lint:
+    name: lint
+    needs: gate
+    if: needs.gate.outputs.docs_only == 'true' || needs.gate.outputs.core == 'true' || needs.gate.outputs.bench == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up toolchain
+        if: needs.gate.outputs.docs_only != 'true'
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: "3.12"
+
+      - name: Lint
+        uses: ./.github/actions/lint
+        with:
+          scope: ${{ needs.gate.outputs.docs_only == 'true' && 'docs' || 'full' }}
+
+  test:
+    name: test (py${{ matrix.python-version }})
+    needs: gate
+    if: needs.gate.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Test
+        uses: ./.github/actions/test
+        with:
+          python-version: ${{ matrix.python-version }}
+
+  bench-smoke:
+    name: bench smoke
+    needs: gate
+    if: needs.gate.outputs.bench == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: "3.12"
+
+      - name: Benchmark smoke (collection only, no timing)
+        shell: bash
+        run: |
+          # ponytail: the guard exists because the bench harness PR has not merged
+          # yet; delete the else branch once benchmarks/ lands on main.
+          if [ -d benchmarks ]; then
+            # LOUD: jax<0.10 until #43 (clip kwargs) merges and pyDOE==0.3.8
+            # until #44 merges (pydoe 1.3.0 breaks the pyDOE module name).
+            uv pip install --system -e . pytest pytest-benchmark "jax<0.10" "pyDOE==0.3.8"
+            pytest benchmarks --benchmark-disable
+          else
+            echo "benchmarks/ not present on this branch; nothing to smoke"
+          fi
+
+  ci-ok:
+    name: ci-ok
+    needs: [gate, lint, test, bench-smoke]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify needed jobs succeeded or were skipped
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          echo "$NEEDS_JSON"
+          # succeeded-or-skipped pattern: skipped is fine, failure or cancellation is not.
+          if grep -Eq '"result": *"(failure|cancelled)"' <<< "$NEEDS_JSON"; then
+            echo "::error::a required job failed or was cancelled"
+            exit 1
+          fi
+          echo "all needed jobs succeeded or were skipped"

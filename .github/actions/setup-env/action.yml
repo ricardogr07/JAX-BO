@@ -1,0 +1,24 @@
+name: setup-env
+description: Set up a Python toolchain by version plus uv with caching. Checkout is the caller's job.
+
+inputs:
+  python-version:
+    description: Python version passed to actions/setup-python (major.minor is enough)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python ${{ inputs.python-version }}
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv (cached)
+      # Full tag on purpose: setup-uv stopped maintaining major alias tags after v7.
+      uses: astral-sh/setup-uv@v9.0.0
+      with:
+        enable-cache: true
+        cache-dependency-glob: |
+          pyproject.toml
+          tox.ini

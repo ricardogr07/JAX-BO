@@ -1,0 +1,43 @@
+name: lint
+description: >
+  Docs checks (em/en dash scan over markdown) plus, in full scope, the clip kwarg
+  guard and the pinned black + ruff checks via the tox lint env. Requires checkout;
+  full scope also requires setup-env (uv on PATH).
+
+inputs:
+  scope:
+    description: "'full' runs everything; 'docs' runs only the markdown dash scan"
+    required: false
+    default: full
+
+runs:
+  using: composite
+  steps:
+    - name: Em/en dash scan (markdown)
+      shell: bash
+      run: |
+        # House rule: no em or en dashes anywhere. Scan every tracked md file.
+        if git ls-files -z '*.md' | LC_ALL=C.UTF-8 xargs -0 -r grep -InP '[\x{2013}\x{2014}]'; then
+          echo "::error::em or en dash found in markdown files (house rule: use a colon or comma, write ranges as X to Y)"
+          exit 1
+        fi
+
+    - name: Guard against clip a_min/a_max kwargs (removed in JAX 0.10)
+      if: ${{ inputs.scope == 'full' }}
+      shell: bash
+      run: |
+        # Guard carried from PR #43: np.clip a_min/a_max kwargs were removed in JAX 0.10.
+        # TEMPORARY warn-only: main still carries the old kwargs until #43 merges.
+        # Flip fail_on_match=1 the moment #43 lands.
+        fail_on_match=0
+        if grep -rEn 'clip\(.*a_(min|max)=' jaxbo/; then
+          echo "::warning::np.clip a_min/a_max kwargs found (removed in JAX 0.10); PR #43 migrates these to positional"
+          if [ "$fail_on_match" = "1" ]; then
+            exit 1
+          fi
+        fi
+
+    - name: Black + ruff (pinned, via tox lint env)
+      if: ${{ inputs.scope == 'full' }}
+      shell: bash
+      run: uvx tox -e lint

@@ -41,5 +41,5 @@ All notable changes to this project will be documented in this file.
 
 ---
 
-## [0.2.0] – 2020 (Original Release)
+## [0.2.0] 2020 (Original Release)
 Initial release by Predictive Intelligence Lab.

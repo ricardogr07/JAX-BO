@@ -10,8 +10,26 @@ on:
 
 
 jobs:
+  # Gate: refuse to publish unless the ci-ok check succeeded on this exact commit.
+  # Tags are cut from main after a CI-gated merge, so a legitimate tag always has one.
+  verify-ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a successful ci-ok check run on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          conclusion=$(gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/check-runs?check_name=ci-ok" \
+            --jq '[.check_runs[].conclusion] | last')
+          echo "ci-ok conclusion on ${{ github.sha }}: ${conclusion:-none}"
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::ci-ok has not succeeded on this commit; refusing to publish"
+            exit 1
+          fi
+
   build-and-publish:
     runs-on: ubuntu-latest
+    needs: verify-ci
     environment: pypi
 
     permissions:

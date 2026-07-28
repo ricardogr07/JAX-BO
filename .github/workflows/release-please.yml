@@ -1,13 +1,24 @@
 name: Release Please
 
+# Gated on CI: runs only after the CI workflow (whose aggregate check is ci-ok)
+# completes successfully on main, instead of on every push.
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    # Both conditions matter: success alone is not enough, because an OLDER
+    # CI run can finish green after a newer commit became the main head
+    # (push runs are not auto-cancelled). head_sha == github.sha pins this
+    # job to CI runs for the current head; a superseded run is skipped and
+    # the newer commit's own CI completion re-triggers release-please.
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_sha == github.sha
     steps:
       - name: Release Please
         uses: googleapis/release-please-action@v4
