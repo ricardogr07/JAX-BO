@@ -1,0 +1,76 @@
+# RepoSage Standards Audit
+
+- Root path: `C:\git\JAX-BO`
+- Profile: data science / ML (3 training, 0 serving file(s))
+- Uncertain checks: 1
+
+**Grade: 0/6**
+
+## Standard 0: Reproducible - FAIL (0/3)
+
+| Check | Status | Evidence | Remediation |
+| --- | --- | --- | --- |
+| Environment spec | FAIL | examples/constrained_bo_ManifoldGP_MultiOutputs.py:17 imports 'matplotlib' (distribution 'matplotlib') not in pyproject.toml | Declare the missing distributions in pyproject.toml. |
+| Dependency pinning | FAIL | no lockfile (uv.lock/poetry.lock/requirements.lock/Pipfile.lock/conda-lock.yml) at root | Generate a lockfile (uv lock / poetry lock) and commit it. |
+| Determinism | FAIL | jaxbo/models/base_gpmodel.py:285 random. without seed | Set an explicit seed (random_state=, np.random.seed, torch.manual_seed). |
+
+## Standard 1: Legible - FAIL (2/3)
+
+| Check | Status | Evidence | Remediation |
+| --- | --- | --- | --- |
+| Version control | PASS | 205 commits with legible subjects |  |
+| Documentation | FAIL | docstring coverage 52% below 70% | Add docstrings to public functions and classes. |
+| Logging | PASS | no stray print() calls in checked modules |  |
+
+## Standard 2: Structured - FAIL (2/3)
+
+| Check | Status | Evidence | Remediation |
+| --- | --- | --- | --- |
+| Package | FAIL | import jaxbo failed:   from jaxbo import (
+    ...<9 lines>...
+    )
+  File "C:\git\JAX-BO\jaxbo\models\__init__.py", line 16, in <module>
+    from .base_gpmodel import GPmodel
+  File "C:\git\JAX-BO\jaxbo\models\base_gpmodel.py", line 10, in <module>
+    from pyDOE import lhs
+ModuleNotFoundError: No module named 'pyDOE' | Fix import errors surfaced by a clean install. |
+| Module boundaries | PASS | no raw I/O in model/serving code |  |
+| Config externalization | PASS | no credential-shaped literals found |  |
+
+## Standard 3: Proven - FAIL (1/3)
+
+| Check | Status | Evidence | Remediation |
+| --- | --- | --- | --- |
+| Test suite | FAIL | pytest collected 0 tests | Ensure test files are importable and named so pytest collects them. |
+| Behavioral coverage | FAIL | only 6/14 test functions assert on values (ratio 0.43, need 0.5) | Replace smoke tests with assertions that compare against expected values. |
+| Evaluation gate | PASS | evaluation gate jaxbo/test_functions.py runs in CI or as a test |  |
+
+## Standard 4: Shipped - FAIL (1/3)
+
+| Check | Status | Evidence | Remediation |
+| --- | --- | --- | --- |
+| Deploy independence | PASS | deploy/publish workflow: .github/workflows/release-please.yml |  |
+| Environment isolation | FAIL | no Dockerfile and no CI step installing from a lockfile frozen | Build a container that installs from a committed lockfile, or freeze the CI install. |
+| CI/CD | UNCERTAIN | a deploy job exists but no needs: reference to the test job was found | Add needs: <test-job> to the deploy job so it cannot ship past red tests. |
+
+## Standard 5: Accountable - FAIL (0/3)
+
+| Check | Status | Evidence | Remediation |
+| --- | --- | --- | --- |
+| Queryable logs | N/A | no serving or training surface detected; Standard 5 presupposes a running system |  |
+| Metric tracking | FAIL | training surface logs no experiment metrics | Instrument the missing surface: production metrics for serving, experiment tracking for training. |
+| Alerting | N/A | no serving or training surface detected; Standard 5 presupposes a running system |  |
+
+## Fix list
+
+1. Standard 0 (s0.env_spec): Declare the missing distributions in pyproject.toml.
+2. Standard 0 (s0.lockfile): Generate a lockfile (uv lock / poetry lock) and commit it.
+3. Standard 0 (s0.determinism): Set an explicit seed (random_state=, np.random.seed, torch.manual_seed).
+4. Standard 1 (s1.docs): Add docstrings to public functions and classes.
+5. Standard 2 (s2.package): Fix import errors surfaced by a clean install.
+6. Standard 3 (s3.suite): Ensure test files are importable and named so pytest collects them.
+   Priority: Standard 3, Proven, carries the highest weight; nothing above it can be trusted until it passes
+7. Standard 3 (s3.behavioral): Replace smoke tests with assertions that compare against expected values.
+8. Standard 4 (s4.env_isolation): Build a container that installs from a committed lockfile, or freeze the CI install.
+9. Standard 4 (s4.cicd): Add needs: <test-job> to the deploy job so it cannot ship past red tests.
+10. Standard 5 (s5.metrics): Instrument the missing surface: production metrics for serving, experiment tracking for training.
