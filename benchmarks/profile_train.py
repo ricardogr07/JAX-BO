@@ -1,4 +1,7 @@
-"""cProfile artifact for one cold GP.train call (n=128, num_restarts=3).
+"""cProfile artifact for one process-cold GP.train call (n=128, num_restarts=3).
+
+The profiled call is wrapped in jax.block_until_ready so the profile
+covers the same synchronized work the bench timings measure.
 
 cProfile is used instead of jax.profiler to avoid the TensorBoard UI
 dependency stack; the interesting hotspots here are Python-level anyway
@@ -13,6 +16,7 @@ import io
 import pstats
 from pathlib import Path
 
+import jax
 from jax import random
 
 from conftest import NUM_RESTARTS, SEED, make_problem
@@ -27,7 +31,7 @@ def main():
 
     prof = cProfile.Profile()
     prof.enable()
-    gp.train(batch, key, num_restarts=NUM_RESTARTS)
+    jax.block_until_ready(gp.train(batch, key, num_restarts=NUM_RESTARTS))
     prof.disable()
 
     prof.dump_stats(str(OUT / "2026-07-28-train-cprofile.prof"))

@@ -12,7 +12,9 @@ from jax import random
 from jaxbo.models import GP
 
 SEED = 0
-DIM = 2
+# 4D to match the real consumer (shelter-pulse jaxbo_optimizer.py: 4 budget
+# shares on [0, 1]^4, (1, 4) predict inputs).
+DIM = 4
 NUM_RESTARTS = 3
 # Current GPmodel.__init__ requires the input_prior key even when unused (EI).
 OPTIONS = {"kernel": "Matern52", "criterion": "EI", "input_prior": None}
@@ -23,6 +25,7 @@ def make_dataset(n, dim=DIM, seed=SEED):
     rng = onp.random.default_rng(seed)
     X = rng.uniform(size=(n, dim))
     y = onp.sin(3.0 * X[:, :1]) * onp.cos(2.0 * X[:, 1:2])
+    y = y + 0.25 * (X[:, 2:3] - X[:, 3:4]) if dim >= 4 else y
     y = y + 0.1 * rng.standard_normal((n, 1))
     return jnp.asarray(X), jnp.asarray(y)
 
