@@ -240,7 +240,7 @@ class GP(MCMCmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
         sample = mu + std * random.normal(key, mu.shape)
         mu = mu * norm_const["sigma_y"] + norm_const["mu_y"]
         sample = sample * norm_const["sigma_y"] + norm_const["mu_y"]
@@ -345,7 +345,7 @@ class GPclassifier(MCMCmodel):
         # Compute predictive mean
         mu = np.matmul(k_pX, tmp_1)
         cov = k_pp - np.matmul(k_pX, tmp_2)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
         sample = mu + std * random.normal(key, mu.shape)
         return mu, sample
 
@@ -531,7 +531,7 @@ class MultifidelityGPclassifier(MCMCmodel):
         # Compute predictive mean
         mu = np.matmul(k_pX, tmp_1)
         cov = k_pp - np.matmul(k_pX, tmp_2)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
         sample = mu + std * random.normal(key, mu.shape)
         return mu, sample
 
@@ -843,7 +843,7 @@ class MissingInputsGP(MCMCmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
         sample = mu + std * random.normal(key, mu.shape)
         # De-normalize
         norm_const = kwargs["norm_const"]

@@ -364,7 +364,7 @@ def fit_kernel_density(X, xi, weights=None, bw=None):
 
     # Evaluate the weights on the input data
     pdf = interp1d_fun(xi)
-    return np.clip(pdf, a_min=0.0) + 1e-8
+    return np.clip(pdf, 0.0) + 1e-8
 
 
 def init_NN(Q):

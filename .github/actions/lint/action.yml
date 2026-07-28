@@ -26,15 +26,11 @@ runs:
       if: ${{ inputs.scope == 'full' }}
       shell: bash
       run: |
-        # Guard carried from PR #43: np.clip a_min/a_max kwargs were removed in JAX 0.10.
-        # TEMPORARY warn-only: main still carries the old kwargs until #43 merges.
-        # Flip fail_on_match=1 the moment #43 lands.
-        fail_on_match=0
+        # np.clip a_min/a_max kwargs were removed in JAX 0.10; jaxbo is clean
+        # as of PR #43 and this guard keeps it that way.
         if grep -rEn 'clip\(.*a_(min|max)=' jaxbo/; then
-          echo "::warning::np.clip a_min/a_max kwargs found (removed in JAX 0.10); PR #43 migrates these to positional"
-          if [ "$fail_on_match" = "1" ]; then
-            exit 1
-          fi
+          echo "::error::np.clip a_min/a_max kwargs found (removed in JAX 0.10); use positional min, max"
+          exit 1
         fi
 
     - name: Black + ruff (pinned, via tox lint env)

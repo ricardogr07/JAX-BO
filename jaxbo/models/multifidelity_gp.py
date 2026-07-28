@@ -98,7 +98,7 @@ class MultifidelityGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
         return mu, std
 
     @partial(jit, static_argnums=(0,))
@@ -129,7 +129,7 @@ class MultifidelityGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
         return mu, std
 
     @partial(jit, static_argnums=(0,))
