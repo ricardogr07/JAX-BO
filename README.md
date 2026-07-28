@@ -65,3 +65,4 @@ All modifications and release notes are documented in the [CHANGELOG](CHANGELOG.
 ---
 ## License ##
 This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+CI is described in .github/workflows/ci.yml.
