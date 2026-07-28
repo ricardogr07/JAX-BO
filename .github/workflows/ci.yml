@@ -1,8 +1,9 @@
 name: CI
 
 on:
+  # No base-branch filter on pull_request: stacked PRs (base = another feature
+  # branch) must get CI too, and the gate scopes work by changed paths anyway.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
