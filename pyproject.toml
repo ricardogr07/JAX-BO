@@ -7,19 +7,32 @@ name = "jaxbo"
 version = "0.1.2"
 description = "Fork of PredictiveIntelligenceLab/JAX-BO with updates and compatibility improvements for Colab and pipelines"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 license = "Apache-2.0"
 authors = [
   {name = "Ricardo García Ramírez", email = "rgr.5882@gmail.com"}
 ]
 keywords = ["jax", "bayesian optimization", "machine learning", "optimization"]
+# Honest support matrix only: 3.10 to 3.14, matching the CI lanes. License is
+# the SPDX expression above (PEP 639), so no License :: classifier.
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Operating System :: OS Independent",
+]
 
 dependencies = [
   "numpy",
   # scipy.stats.qmc (the pyDOE replacement) first shipped in scipy 1.7.0
   "scipy>=1.7",
-  "jax",
-  "jaxlib",
+  # Tested range. jax 0.10 removed the clip a_min/a_max kwargs (handled in #43);
+  # 0.11 is unproven here. SCOPE.md: this ceiling moves only on a green CI run.
+  "jax>=0.6,<0.11",
+  "jaxlib>=0.6,<0.11",
   "scikit-learn",
   "KDEpy",
   "numpyro"
@@ -29,6 +42,16 @@ dependencies = [
 bench = [
   "pytest",
   "pytest-benchmark",
+]
+# examples/ import matplotlib but it was never declared anywhere
+examples = [
+  "matplotlib",
+]
+
+[dependency-groups]
+# Installed by a default uv sync; CI runs pytest from the frozen lock.
+dev = [
+  "pytest",
 ]
 
 [project.urls]
