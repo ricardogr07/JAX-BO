@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Callable, final
 import jax.numpy as np
-from jaxbo.input_priors import uniform_prior, gaussian_prior, Prior
+from jaxbo.priors import uniform_prior, gaussian_prior, Prior
 
 
 class TestFunction(ABC):

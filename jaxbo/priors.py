@@ -1,4 +1,11 @@
+"""Input prior distributions over the optimization domain.
+
+Part of the jaxbo core (SCOPE.md section 3). The historical module name
+``jaxbo.input_priors`` re-exports everything here.
+"""
+
 import abc
+
 import jax.numpy as np
 from jax import random
 from jax.scipy.stats import multivariate_normal, uniform

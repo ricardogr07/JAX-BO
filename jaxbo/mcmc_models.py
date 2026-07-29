@@ -1,3 +1,10 @@
+"""MCMC-based Gaussian process models built on numpyro.
+
+Staged for the ``[mcmc]`` optional extra (SCOPE.md section 3, slice 2b).
+This module imports numpyro at module level, so the jaxbo core never imports
+it eagerly: ``jaxbo.__init__`` resolves it lazily on first attribute access.
+"""
+
 from functools import partial
 from typing import Any, Dict
 
@@ -93,9 +100,13 @@ class MCMCmodel(GPmodel):
         return mean_prediction, std_prediction
 
 
-class GP(MCMCmodel):
+class MCMCGP(MCMCmodel):
     """
     Gaussian Process (GP) model for MCMC-based Bayesian inference.
+
+    Renamed from ``GP`` in 0.2.0 so it no longer shadows
+    :class:`jaxbo.gp.GP` (SCOPE.md section 3); the two classes have
+    different train signatures and inference semantics.
     This class implements a Gaussian Process model with log-normal priors over kernel parameters and noise,
     suitable for use with Markov Chain Monte Carlo (MCMC) methods. It provides methods for defining the model,
     computing the Cholesky decomposition of the kernel matrix, and drawing posterior predictive samples.

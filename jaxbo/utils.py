@@ -1,18 +1,51 @@
-import numpy as onp
+"""Core normalization and standardization helpers for jaxbo models.
+
+This module is part of the jaxbo core (SCOPE.md section 3) and depends only
+on jax and numpy. The KDE machinery (``fit_kernel_density``) and the stax
+neural network initializers (``init_NN``, ``init_ResNet``,
+``init_MomentumResNet``) moved to the private staging modules
+:mod:`jaxbo._weights` and :mod:`jaxbo._nn`; their historical import paths on
+this module keep working through the lazy ``__getattr__`` below, without the
+core import graph ever reaching KDEpy or ``jax.example_libraries.stax``.
+"""
+
+from typing import Any, Dict, List, Tuple
+
 import jax.numpy as np
-from jax import jit, vmap, random
-from jax.example_libraries import stax
-from jax.example_libraries.stax import Dense, Tanh
-from jax.nn.initializers import glorot_normal, normal
+from jax import jit, vmap
 from jax.scipy.stats import multivariate_normal
-from KDEpy import FFTKDE
-from scipy.interpolate import interp1d
-from scipy.stats import gaussian_kde
-import warnings
+
+# Names that moved out of the core, staged for the 2b extras split
+# (SCOPE.md decision 7): attribute name to its new home.
+_MOVED = {
+    "fit_kernel_density": "jaxbo._weights",
+    "init_NN": "jaxbo._nn",
+    "init_ResNet": "jaxbo._nn",
+    "init_MomentumResNet": "jaxbo._nn",
+}
+
+
+def __getattr__(name: str):
+    """Forward moved attributes to their staging modules lazily (PEP 562)."""
+    target = _MOVED.get(name)
+    if target is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    obj = getattr(importlib.import_module(target), name)
+    globals()[name] = obj  # cache so __getattr__ runs once per name
+    return obj
+
+
+def __dir__() -> List[str]:
+    """Advertise the core helpers plus the lazily forwarded names."""
+    return sorted(set(globals()) | set(_MOVED))
 
 
 @jit
-def normalize(X, y, bounds):
+def normalize(
+    X: np.ndarray, y: np.ndarray, bounds: Dict[str, np.ndarray]
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Normalizes input features X and target values y using provided bounds and statistics.
 
@@ -33,6 +66,8 @@ def normalize(X, y, bounds):
     Notes:
         - X is normalized to the [0, 1] range using the provided bounds.
         - y is normalized to have zero mean and unit variance.
+        - The returned batch is what :meth:`jaxbo.gp.GP.train` expects; see the
+          normalization contract in :class:`jaxbo.gp.GP`.
     """
     mu_y, sigma_y = y.mean(0), y.std(0)
     X = (X - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
@@ -43,7 +78,13 @@ def normalize(X, y, bounds):
 
 
 @jit
-def normalize_MultifidelityGP(XL, yL, XH, yH, bounds):
+def normalize_MultifidelityGP(
+    XL: np.ndarray,
+    yL: np.ndarray,
+    XH: np.ndarray,
+    yH: np.ndarray,
+    bounds: Dict[str, np.ndarray],
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Normalizes input and output data for a multi-fidelity Gaussian Process (GP) model.
 
@@ -84,7 +125,9 @@ def normalize_MultifidelityGP(XL, yL, XH, yH, bounds):
 
 
 @jit
-def normalize_GradientGP(XF, yF, XG, yG):
+def normalize_GradientGP(
+    XF: np.ndarray, yF: np.ndarray, XG: np.ndarray, yG: np.ndarray
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Normalizes the inputs and outputs for a Gradient Gaussian Process (GP) model.
 
@@ -107,7 +150,13 @@ def normalize_GradientGP(XF, yF, XG, yG):
 
 
 @jit
-def normalize_HeterogeneousMultifidelityGP(XL, yL, XH, yH, bounds):
+def normalize_HeterogeneousMultifidelityGP(
+    XL: np.ndarray,
+    yL: np.ndarray,
+    XH: np.ndarray,
+    yH: np.ndarray,
+    bounds: Dict[str, np.ndarray],
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Normalizes input and output data for heterogeneous multifidelity Gaussian Process (GP) models.
 
@@ -150,7 +199,9 @@ def normalize_HeterogeneousMultifidelityGP(XL, yL, XH, yH, bounds):
 
 
 @jit
-def standardize(X, y):
+def standardize(
+    X: np.ndarray, y: np.ndarray
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Standardizes the input features X and target y to have zero mean and unit variance.
 
@@ -179,7 +230,9 @@ def standardize(X, y):
 
 
 @jit
-def standardize_MultifidelityGP(XL, yL, XH, yH):
+def standardize_MultifidelityGP(
+    XL: np.ndarray, yL: np.ndarray, XH: np.ndarray, yH: np.ndarray
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Standardizes input and output data for multi-fidelity Gaussian Process modeling.
 
@@ -221,7 +274,9 @@ def standardize_MultifidelityGP(XL, yL, XH, yH):
 
 
 @jit
-def standardize_HeterogeneousMultifidelityGP(XL, yL, XH, yH):
+def standardize_HeterogeneousMultifidelityGP(
+    XL: np.ndarray, yL: np.ndarray, XH: np.ndarray, yH: np.ndarray
+) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
     """
     Standardizes and normalizes input and output data for heterogeneous multifidelity Gaussian Process models.
 
@@ -272,7 +327,7 @@ def standardize_HeterogeneousMultifidelityGP(XL, yL, XH, yH):
 
 
 @jit
-def compute_w_gmm(x, **kwargs):
+def compute_w_gmm(x: np.ndarray, **kwargs: Any) -> np.ndarray:
     """
     Computes the weighted sum of Gaussian Mixture Model (GMM) components at a given point.
 
@@ -303,237 +358,3 @@ def compute_w_gmm(x, **kwargs):
 
     w = np.sum(vmap(gmm_mode)(weights, means, covs), axis=0)
     return w
-
-
-def fit_kernel_density(X, xi, weights=None, bw=None):
-    """Fit a kernel density estimator and evaluate its PDF at ``xi``.
-
-    Parameters
-    ----------
-    X : array-like
-        Input data used to fit the kernel density estimator. Should be a 1D
-        array.
-    xi : array-like
-        Points at which to evaluate the estimated PDF.
-    weights : array-like, optional
-        Weights for each data point in ``X``. If ``None``, equal weighting is
-        assumed.
-    bw : float, optional
-        Bandwidth for the KDE. If ``None``, the bandwidth is estimated
-        automatically.
-
-    Returns
-    -------
-    pdf : ndarray
-        The estimated PDF values at the points specified by ``xi``. Values are
-        clipped to be non-negative and a small epsilon (``1e-8``) is added for
-        numerical stability.
-
-    Notes
-    -----
-    - Uses :class:`FFTKDE` for fast kernel density estimation.
-    - If bandwidth estimation fails or results in a very small value, a default
-      of ``1.0`` is used.
-    - The output PDF is interpolated using a linear interpolation and
-      extrapolated as needed.
-    """
-
-    X, weights = onp.array(X), onp.array(weights)
-    X = X.flatten()
-    if bw is None:
-        try:
-            sc = gaussian_kde(X, weights=weights)
-            bw = onp.sqrt(sc.covariance).flatten()[0]
-        except (np.linalg.LinAlgError, ValueError) as e:
-            warnings.warn(
-                f"KDE bandwidth estimation failed: {e}. Falling back to bw=1.0."
-            )
-            bw = 1.0
-        if bw < 1e-8:
-            warnings.warn(
-                f"Estimated bandwidth {bw:.2e} is too small. Using bw=1.0 instead."
-            )
-            bw = 1.0
-
-    kde_pdf_x, kde_pdf_y = FFTKDE(bw=bw).fit(X, weights).evaluate()
-
-    # Define the interpolation function
-    interp1d_fun = interp1d(
-        kde_pdf_x, kde_pdf_y, kind="linear", fill_value="extrapolate"
-    )
-
-    # Evaluate the weights on the input data
-    pdf = interp1d_fun(xi)
-    return np.clip(pdf, 0.0) + 1e-8
-
-
-def init_NN(Q):
-    """
-    Initializes a feedforward neural network using the stax API.
-
-    Args:
-        Q (list or tuple of int): A sequence specifying the number of units in each layer of the network.
-            The length of Q determines the number of layers, where Q[0] is the input dimension and Q[-1] is the output dimension.
-
-    Returns:
-        net_init (callable): A function to initialize the network parameters.
-        net_apply (callable): A function to apply the network to inputs.
-
-    Notes:
-        - Each hidden layer uses a Dense layer followed by a Tanh activation.
-        - The output layer is a Dense layer without an activation.
-        - Weights are initialized using Glorot normal initialization, and biases are initialized with a normal distribution, both with dtype float64.
-    """
-    layers = []
-    num_layers = len(Q)
-    for i in range(0, num_layers - 2):
-        layers.append(
-            Dense(
-                Q[i + 1],
-                W_init=glorot_normal(dtype=np.float64),
-                b_init=normal(dtype=np.float64),
-            )
-        )
-        layers.append(Tanh)
-    layers.append(
-        Dense(
-            Q[-1],
-            W_init=glorot_normal(dtype=np.float64),
-            b_init=normal(dtype=np.float64),
-        )
-    )
-    net_init, net_apply = stax.serial(*layers)
-    return net_init, net_apply
-
-
-def init_ResNet(layers, depth, is_spect):
-    """
-    Initializes a residual neural network (ResNet) with configurable depth, layer sizes, and optional spectral normalization.
-    Args:
-        layers (list of int): List specifying the number of units in each layer of the network.
-        depth (int): Number of residual blocks to apply in the network.
-        is_spect (int): If set to 1, applies spectral normalization and normalization parameters to the network; otherwise, standard initialization is used.
-    Returns:
-        init (callable): A function that takes a JAX random key and returns initialized network parameters.
-        apply (callable): A function that applies the ResNet to input data using the initialized parameters.
-    Notes:
-        - The network uses tanh activations and residual connections.
-        - If `is_spect` is enabled, spectral normalization is applied to the weights, and additional normalization parameters (gamma, beta) are included.
-        - The `apply` function performs normalization on the inputs if `is_spect` is enabled, otherwise applies standard residual blocks.
-    """
-    """ MLP blocks with residual connections"""
-
-    def init(rng_key):
-        # Initialize neural net params
-        def init_layer(key, d_in, d_out):
-            k1, k2 = random.split(key)
-
-            # W = random.normal(k1, (d_in, d_out))
-            # b = random.normal(k2, (d_out,))
-
-            glorot_stddev = 1.0 / np.sqrt((d_in + d_out) / 2.0)
-            W = glorot_stddev * random.normal(k1, (d_in, d_out))
-            if is_spect == 1:
-                W = W / np.linalg.norm(W)
-
-            b = np.zeros(d_out)
-
-            return W, b
-
-        key, *keys = random.split(rng_key, len(layers))
-        params = list(map(init_layer, keys, layers[:-1], layers[1:]))
-        if is_spect == 1:
-            gamma = np.ones(layers[0])
-            beta = np.zeros(layers[0])
-            params.append(gamma)
-            params.append(beta)
-        return params
-
-    def mlp(params, inputs):
-        for W, b in params:
-            outputs = np.dot(inputs, W) + b
-            inputs = np.tanh(outputs)
-        return outputs
-
-    if is_spect == 1:
-
-        def apply(params, inputs):
-            inputs = (
-                params[-2]
-                / np.sqrt(np.var(inputs, axis=0))
-                * (inputs - np.mean(inputs, axis=0))
-                + params[-1]
-            )
-            for i in range(depth):
-                # outputs = mlp(params, inputs) + inputs
-                inputs = mlp(params[:-2], inputs) + inputs
-            return inputs
-
-    else:
-
-        def apply(params, inputs):
-            for i in range(depth):
-                inputs = mlp(params, inputs) + inputs
-            return inputs
-
-    return init, apply
-
-
-def init_MomentumResNet(layers, depth, vel_zeros=0, gamma=0.9):
-    """
-    Initializes a MomentumResNet, a multi-layer perceptron (MLP) with residual connections and momentum-based updates.
-
-    Args:
-        layers (list of int): List specifying the number of units in each layer of the MLP.
-        depth (int): Number of residual/momentum update steps to apply.
-        vel_zeros (int, optional): If 1, initializes the velocity vector to zeros; otherwise, initializes using the MLP output. Default is 0.
-        gamma (float, optional): Momentum parameter controlling the contribution of previous velocity. Default is 0.9.
-
-    Returns:
-        init (callable): Function that takes a JAX PRNG key and returns initialized network parameters.
-        apply (callable): Function that applies the MomentumResNet to input data, given parameters and inputs.
-
-    Notes:
-        - The network uses tanh activations in each layer.
-        - The residual connection is implemented via a velocity vector updated with momentum.
-        - The apply function's behavior depends on the value of `vel_zeros`.
-    """
-    """ MLP blocks with residual connections"""
-
-    def init(rng_key):
-        # Initialize neural net params
-        def init_layer(key, d_in, d_out):
-            k1, k2 = random.split(key)
-            W = random.normal(k1, (d_in, d_out))
-            b = random.normal(k2, (d_out,))
-            return W, b
-
-        key, *keys = random.split(rng_key, len(layers))
-        params = list(map(init_layer, keys, layers[:-1], layers[1:]))
-        return params
-
-    def mlp(params, inputs):
-        for W, b in params:
-            outputs = np.dot(inputs, W) + b
-            inputs = np.tanh(outputs)
-        return outputs
-
-    if vel_zeros == 1:
-
-        def apply(params, inputs):
-            velocity = np.zeros_like(inputs)
-            for i in range(depth):
-                velocity = gamma * velocity + (1.0 - gamma) * mlp(params, inputs)
-                inputs = inputs + velocity
-            return inputs
-
-    else:
-
-        def apply(params, inputs):
-            velocity = mlp(params, inputs)
-            for i in range(depth):
-                velocity = gamma * velocity + (1.0 - gamma) * mlp(params, inputs)
-                inputs = inputs + velocity
-            return inputs
-
-    return init, apply

@@ -1,3 +1,11 @@
+"""Core Gaussian process models: the ``GPmodel`` base class and the exact ``GP``.
+
+This module is the heart of the jaxbo core (SCOPE.md section 3). It must stay
+importable with only the core dependencies (jax, jaxlib, numpy, scipy):
+extras-bound packages (scikit-learn, KDEpy) are imported lazily inside the
+single method that needs them (``GPmodel.fit_gmm``), never at module level.
+"""
+
 from abc import ABC
 from functools import partial
 from typing import Any, Callable, Dict, Tuple
@@ -5,16 +13,15 @@ from typing import Any, Callable, Dict, Tuple
 import jax.numpy as np
 import numpy as onp
 from jax import jit, random, vjp, vmap
-from jax.random import split
-from jax.scipy.linalg import solve_triangular
+from jax.random import PRNGKey, split
+from jax.scipy.linalg import cholesky, solve_triangular
 from scipy.stats import qmc
-from sklearn import mixture
 
 import jaxbo.acquisitions as acquisitions
 import jaxbo.kernels as kernels
 import jaxbo.utils as utils
+from jaxbo import initializers
 from jaxbo.optimizers import minimize_lbfgs_grad
-from jaxbo.utils import fit_kernel_density
 
 
 SUPPORTED_KERNELS: Dict[str, Callable] = {
@@ -27,6 +34,13 @@ SUPPORTED_KERNELS: Dict[str, Callable] = {
 
 
 class GPmodel(ABC):
+    """Abstract base class shared by every jaxbo Gaussian process model.
+
+    Provides the negative log-marginal likelihood, acquisition dispatch, and
+    next-point selection machinery; concrete subclasses implement
+    ``compute_cholesky``, ``train``, and ``predict``.
+    """
+
     def __init__(self, options: Dict):
         """
         Abstract base class for Gaussian Process models.
@@ -171,6 +185,13 @@ class GPmodel(ABC):
             - This assumes self.predict returns only the predictive mean as [0]-th element.
             - LHS is used for more uniform coverage of the input domain.
         """
+        # Lazy imports: scikit-learn and KDEpy are extras-bound dependencies
+        # (SCOPE.md decision 7). The core import graph must never reach them,
+        # so they load only when this method is actually called. Slice 2b
+        # moves this whole surface behind the [weighted] extra.
+        from sklearn import mixture
+
+        from jaxbo._weights import fit_kernel_density
 
         bounds = kwargs["bounds"]
         lb = bounds["lb"]
@@ -435,3 +456,208 @@ class GPmodel(ABC):
         x_new = X_cand[best_index : best_index + 1, :]  # Keep 2D shape
 
         return x_new
+
+
+class GP(GPmodel):
+    """Exact Gaussian process regression model for Bayesian optimization.
+
+    Hyperparameters are optimized by multi-start L-BFGS-B on the negative
+    log-marginal likelihood.
+
+    Warning:
+        Normalization contract (SCOPE.md section 2), the two halves are
+        asymmetric on purpose and mixing them up fails silently:
+
+        - ``train`` consumes ``batch`` exactly as given: pass an ALREADY
+          NORMALIZED batch, typically the output of
+          :func:`jaxbo.utils.normalize` (inputs scaled to the unit cube
+          against the domain bounds, targets standardized).
+        - ``predict`` takes RAW domain points ``X_star`` and normalizes them
+          internally against ``bounds``.
+    """
+
+    def __init__(self, options: Dict[str, Any]):
+        """Initialize a standard Gaussian Process model.
+
+        Args:
+            options: Model configuration dictionary (see :class:`GPmodel`),
+                with keys such as 'kernel', 'input_prior', and 'criterion'.
+        """
+        super().__init__(options)
+
+    @partial(jit, static_argnums=(0,))
+    def compute_cholesky(
+        self, params: np.ndarray, batch: Dict[str, np.ndarray]
+    ) -> np.ndarray:
+        """
+        Compute the Cholesky decomposition of the kernel matrix.
+
+        Args:
+            params: Log-transformed kernel parameters (including noise term).
+            batch: Dictionary containing normalized training inputs 'X'.
+
+        Returns:
+            Lower-triangular matrix from Cholesky decomposition.
+        """
+        X = batch["X"]
+        N, D = X.shape
+        sigma_n = np.exp(params[-1])
+        theta = np.exp(params[:-1])
+        K = self.kernel(X, X, theta) + np.eye(N) * (sigma_n + 1e-8)
+        return cholesky(K, lower=True)
+
+    def train(
+        self,
+        batch: Dict[str, np.ndarray],
+        rng_key: PRNGKey,
+        num_restarts: int = 10,
+    ) -> np.ndarray:
+        """
+        Optimize GP hyperparameters using multi-start L-BFGS-B.
+
+        Args:
+            batch: Dictionary with 'X' and 'y'. See the warning below for the
+                normalization this data must already carry.
+            rng_key: PRNGKey for reproducibility.
+            num_restarts: Number of random initializations.
+
+        Returns:
+            Best hyperparameters found (array).
+
+        Warning:
+            ``batch`` is consumed exactly as given: it must be ALREADY
+            NORMALIZED by the caller, typically via
+            :func:`jaxbo.utils.normalize` (inputs 'X' scaled to the unit cube
+            against the domain bounds, targets 'y' standardized). This is
+            asymmetric with :meth:`predict`, which takes RAW domain points and
+            normalizes them internally against ``bounds``. Training on raw
+            inputs produces silently wrong results: no error is raised.
+        """
+
+        def objective(params: np.ndarray) -> Tuple[onp.ndarray, onp.ndarray]:
+            value, grads = self.likelihood_value_and_grad(params, batch)
+            return onp.array(value), onp.array(grads)
+
+        dim = batch["X"].shape[1]
+        rng_keys = random.split(rng_key, num_restarts)
+
+        params_list, values = [], []
+        for i in range(num_restarts):
+            init = initializers.random_init_GP(rng_keys[i], dim)
+            p, val = minimize_lbfgs_grad(objective, init)
+            params_list.append(p)
+            values.append(val)
+
+        params_stack = np.vstack(params_list)
+        values_stack = np.vstack(values)
+        idx_best = np.nanargmin(values_stack)
+        return params_stack[idx_best, :]
+
+    @partial(jit, static_argnums=(0,))
+    def predict(
+        self, X_star: np.ndarray, **kwargs: Any
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Predict mean and standard deviation for new input points.
+
+        Args:
+            X_star: New input points in the RAW (unnormalized) domain,
+                shape (N, D). See the warning below.
+            kwargs: Must include 'params', 'batch', 'bounds', and 'norm_const'.
+
+        Returns:
+            Tuple (mean, std): Predictive posterior mean and standard deviation.
+
+        Warning:
+            ``X_star`` is RAW domain input: it is normalized internally
+            against ``bounds`` before evaluation. The ``batch`` passed through
+            ``kwargs`` must be the same ALREADY NORMALIZED batch used by
+            :meth:`train` (unit-cube inputs). Passing pre-normalized
+            ``X_star``, or a raw ``batch``, fails silently: no error is
+            raised, the predictions are just wrong.
+        """
+        params, batch, bounds = kwargs["params"], kwargs["batch"], kwargs["bounds"]
+        X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        X, y = batch["X"], batch["y"]
+        sigma_n = np.exp(params[-1])
+        theta = np.exp(params[:-1])
+
+        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
+            sigma_n + 1e-8
+        )
+        k_pX = self.kernel(X_star, X, theta)
+        L = self.compute_cholesky(params, batch)
+        alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
+        beta = solve_triangular(L.T, solve_triangular(L, k_pX.T, lower=True))
+
+        mu = k_pX @ alpha
+        cov = k_pp - k_pX @ beta
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        return mu, std
+
+    @partial(jit, static_argnums=(0,))
+    def posterior_covariance(
+        self, x: np.ndarray, xp: np.ndarray, **kwargs: Any
+    ) -> np.ndarray:
+        """
+        Compute the posterior covariance between two sets of points.
+
+        Args:
+            x, xp: Input arrays of shape (N, D), in the RAW domain (both are
+                normalized internally against 'bounds').
+            kwargs: Must include 'params', 'batch', and 'bounds'.
+
+        Returns:
+            Posterior covariance matrix between x and xp.
+        """
+        params = kwargs["params"]
+        batch = kwargs["batch"]
+        bounds = kwargs["bounds"]
+
+        x = (x - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        xp = (xp - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        X = batch["X"]
+        theta = np.exp(params[:-1])
+
+        k_pp = self.kernel(x, xp, theta)
+        k_pX = self.kernel(x, X, theta)
+        k_Xp = self.kernel(X, xp, theta)
+        L = self.compute_cholesky(params, batch)
+        beta = solve_triangular(L.T, solve_triangular(L, k_Xp, lower=True))
+        cov = k_pp - np.matmul(k_pX, beta)
+        return cov
+
+    @partial(jit, static_argnums=(0,))
+    def draw_posterior_sample(self, X_star: np.ndarray, **kwargs: Any) -> np.ndarray:
+        """
+        Draw a single sample from the GP posterior at new input locations.
+
+        Args:
+            X_star: Input locations in the RAW domain, shape (N, D);
+                normalized internally against 'bounds'.
+            kwargs: Must include 'params', 'batch', 'bounds', 'rng_key'.
+
+        Returns:
+            Sample drawn from the multivariate normal posterior.
+        """
+        params = kwargs["params"]
+        batch = kwargs["batch"]
+        bounds = kwargs["bounds"]
+        rng_key = kwargs["rng_key"]
+
+        X_star = (X_star - bounds["lb"]) / (bounds["ub"] - bounds["lb"])
+        X, y = batch["X"], batch["y"]
+        sigma_n = np.exp(params[-1])
+        theta = np.exp(params[:-1])
+
+        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
+            sigma_n + 1e-8
+        )
+        k_pX = self.kernel(X_star, X, theta)
+        L = self.compute_cholesky(params, batch)
+        alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
+        beta = solve_triangular(L.T, solve_triangular(L, k_pX.T, lower=True))
+
+        mu = k_pX @ alpha
+        cov = k_pp - k_pX @ beta
+        return random.multivariate_normal(rng_key, mu, cov)
