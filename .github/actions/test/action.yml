@@ -35,4 +35,6 @@ runs:
     - name: Run tests
       shell: bash
       # --no-sync so uv run does not restore the locked jax over the lane pin.
-      run: uv run --no-sync pytest tests
+      # Coverage is reported per lane (issue #29); pytest-cov comes from the
+      # locked dev group.
+      run: uv run --no-sync pytest tests --cov=jaxbo --cov-report=term-missing

@@ -75,6 +75,9 @@ dev = [
   "numpyro",
   "scikit-learn",
   "KDEpy",
+  # Coverage is reported by the CI test lanes (.github/actions/test); the
+  # local tox envs stay plain pytest on purpose.
+  "pytest-cov",
 ]
 
 [project.urls]
