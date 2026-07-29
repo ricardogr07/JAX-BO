@@ -1,36 +1,34 @@
 name: test
 description: >
-  Run the tox test env for a Python version. The env name is derived as
-  py{major}{minor} so "3.10", "3.10.6" and "3.12" all land on py310/py312.
-  Requires checkout + setup-env.
+  Install the project frozen from the committed uv.lock, apply the per-lane
+  jax pin, and run pytest. Requires checkout + setup-env.
 
 inputs:
   python-version:
-    description: Python version (major.minor or full); tox env derived as py{major}{minor}
+    description: Python version (major.minor is enough) for the synced venv
     required: true
   jax-spec:
     description: >
-      pip requirement spec for jax, enforced on every install inside the tox env
-      via PIP_CONSTRAINT (so the package-deps resolve phase cannot upgrade jax).
-    required: false
-    # LOUD: jax<0.10 until #43 (clip a_min/a_max kwargs) merges;
-    # 00b/1c tighten this once it lands. pyDOE is pinned below until #44.
-    default: jax<0.10
+      pip requirement spec for jax, applied as an explicit post-sync pin.
+      The lock resolves one jax per python range (0.6.2 on 3.10, 0.10.2 on
+      3.11+), but the matrix deliberately tests the floor and the newest
+      installable jax per interpreter, so each lane re-pins jax after the
+      frozen sync; uv resolves the matching jaxlib alongside.
+    required: true
 
 runs:
   using: composite
   steps:
-    - name: Run tox test env
+    - name: Sync locked environment
       shell: bash
-      run: |
-        IFS=. read -r maj min _ <<< "${{ inputs.python-version }}"
-        # LOUD: pyDOE==0.3.8 pinned until #44 merges. The modern pydoe 1.3.0
-        # release ships a lowercase 'pydoe' module, so 'from pyDOE import lhs'
-        # breaks; 0.3.8 is the last release shipping the pyDOE module name.
-        {
-          printf '%s\n' "${{ inputs.jax-spec }}"
-          printf 'pyDOE==0.3.8\n'
-        } > "$RUNNER_TEMP/pin-constraints.txt"
-        export PIP_CONSTRAINT="$RUNNER_TEMP/pin-constraints.txt"
-        echo "tox env: py${maj}${min}, constraints: ${{ inputs.jax-spec }} pyDOE==0.3.8"
-        uvx tox -e "py${maj}${min}"
+      # Issue #25: CI installs frozen from the committed lockfile.
+      run: uv sync --frozen --python "${{ inputs.python-version }}"
+
+    - name: Apply per-lane jax pin
+      shell: bash
+      run: uv pip install "${{ inputs.jax-spec }}"
+
+    - name: Run tests
+      shell: bash
+      # --no-sync so uv run does not restore the locked jax over the lane pin.
+      run: uv run --no-sync pytest tests
