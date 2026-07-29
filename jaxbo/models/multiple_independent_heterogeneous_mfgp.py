@@ -11,7 +11,7 @@ import jaxbo.initializers as initializers
 import jaxbo.utils as utils
 from jaxbo.optimizers import minimize_lbfgs
 from sklearn import mixture
-from pyDOE import lhs
+from scipy.stats import qmc
 
 from jax.scipy.stats import norm
 from jaxbo.models.base_gpmodel import GPmodel
@@ -231,7 +231,8 @@ class MultipleIndependentHeterogeneousMFGP(GPmodel):
         dim = lb.shape[0]
 
         onp.random.seed(rng_key[0])
-        x0 = lb + (ub - lb) * lhs(dim, num_restarts)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        x0 = lb + (ub - lb) * sampler.random(num_restarts)
         # print("x0 for bfgs", x0)
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
         for i in range(num_restarts):
@@ -253,11 +254,10 @@ class MultipleIndependentHeterogeneousMFGP(GPmodel):
         rng_key = kwargs["rng_key"]
         dim = lb.shape[0]
         # Sample data across the entire domain
-        X = lb + (ub - lb) * lhs(dim, N_samples)
-
         # set the seed for sampling X
         onp.random.seed(rng_key[0])
-        X = lb + (ub - lb) * lhs(dim, N_samples)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        X = lb + (ub - lb) * sampler.random(N_samples)
 
         # We only keep the first row that correspond to the objective prediction and same for y_samples
         y = self.predict_all(X, **kwargs)[0][0, :]
@@ -278,7 +278,8 @@ class MultipleIndependentHeterogeneousMFGP(GPmodel):
         rng_key = random.split(rng_key)[0]
         onp.random.seed(rng_key[0])
 
-        X_samples = lb + (ub - lb) * lhs(dim, N_samples)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        X_samples = lb + (ub - lb) * sampler.random(N_samples)
         y_samples = self.predict_all(X_samples, **kwargs)[0][0, :]
 
         # Compute p_x and p_y from samples across the entire domain

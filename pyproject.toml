@@ -16,12 +16,12 @@ keywords = ["jax", "bayesian optimization", "machine learning", "optimization"]
 
 dependencies = [
   "numpy",
-  "scipy",
+  # scipy.stats.qmc (the pyDOE replacement) first shipped in scipy 1.7.0
+  "scipy>=1.7",
   "jax",
   "jaxlib",
   "scikit-learn",
   "KDEpy",
-  "pyDOE",
   "numpyro"
 ]
 

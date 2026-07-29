@@ -5,7 +5,7 @@ import numpy as onp
 from jax import jit, random, vjp
 from jax.flatten_util import ravel_pytree
 from jax.scipy.linalg import cholesky, solve_triangular
-from pyDOE import lhs
+from scipy.stats import qmc
 
 import jaxbo.acquisitions as acquisitions
 import jaxbo.initializers as initializers
@@ -253,7 +253,8 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
         dim = lb.shape[0]
 
         onp.random.seed(rng_key[0])
-        x0 = lb + (ub - lb) * lhs(dim, num_restarts)
+        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
+        x0 = lb + (ub - lb) * sampler.random(num_restarts)
         # print("x0 for bfgs", x0)
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
         for i in range(num_restarts):
