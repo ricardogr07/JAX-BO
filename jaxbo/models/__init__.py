@@ -13,32 +13,56 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .base_gpmodel import GPmodel
-from .gp_model import GP
-from .multiple_independent_output_gp_model import MultipleIndependentOutputsGP
-from .manifold_gp_model import ManifoldGP
-from .manifold_gp_multioutputs import ManifoldGP_MultiOutputs
-from .multifidelity_gp import MultifidelityGP
-from .deep_multifidelity_gp import DeepMultifidelityGP
-from .deep_multifidelity_gp_multioutputs import DeepMultifidelityGP_MultiOutputs
-from .gradient_gp import GradientGP
-from .multiple_independent_mfgp import MultipleIndependentMFGP
-from .heterogeneous_multifidelity_gp import HeterogeneousMultifidelityGP
-from .multiple_independent_heterogeneous_mfgp import (
-    MultipleIndependentHeterogeneousMFGP,
-)
+"""Model namespace for jaxbo.
 
-__all__ = [
-    "GPmodel",
-    "GP",
-    "MultipleIndependentOutputsGP",
-    "ManifoldGP",
-    "ManifoldGP_MultiOutputs",
-    "MultifidelityGP",
-    "DeepMultifidelityGP",
-    "DeepMultifidelityGP_MultiOutputs",
-    "GradientGP",
-    "MultipleIndependentMFGP",
-    "HeterogeneousMultifidelityGP",
-    "MultipleIndependentHeterogeneousMFGP",
-]
+The core exposes exactly two classes eagerly: :class:`jaxbo.gp.GPmodel` and
+:class:`jaxbo.gp.GP` (SCOPE.md section 3). The multifidelity, manifold,
+gradient, and multiple-output research models remain importable from this
+namespace for backward compatibility, but they load lazily on first access so
+the core import graph never pays for their dependencies. Slice 2b moves them
+into optional-extra subpackages.
+"""
+
+from typing import List
+
+from jaxbo.gp import GP, GPmodel
+
+# Lazily resolved research models: attribute name to submodule. These are
+# staged for the extras split (SCOPE.md sections 3 and 7, slice 2b); nothing
+# in the core may import them eagerly.
+_LAZY_MODELS = {
+    "MultipleIndependentOutputsGP": "multiple_independent_output_gp_model",
+    "ManifoldGP": "manifold_gp_model",
+    "ManifoldGP_MultiOutputs": "manifold_gp_multioutputs",
+    "MultifidelityGP": "multifidelity_gp",
+    "DeepMultifidelityGP": "deep_multifidelity_gp",
+    "DeepMultifidelityGP_MultiOutputs": "deep_multifidelity_gp_multioutputs",
+    "GradientGP": "gradient_gp",
+    "MultipleIndependentMFGP": "multiple_independent_mfgp",
+    "HeterogeneousMultifidelityGP": "heterogeneous_multifidelity_gp",
+    "MultipleIndependentHeterogeneousMFGP": "multiple_independent_heterogeneous_mfgp",
+}
+
+__all__ = ["GPmodel", "GP"]
+
+
+def __getattr__(name: str):
+    """Resolve research model classes lazily (PEP 562).
+
+    Keeps historical imports such as ``from jaxbo.models import
+    MultifidelityGP`` working without dragging their heavier dependency
+    graph into ``import jaxbo``.
+    """
+    module_name = _LAZY_MODELS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    cls = getattr(importlib.import_module(f"jaxbo.models.{module_name}"), name)
+    globals()[name] = cls  # cache so __getattr__ runs once per name
+    return cls
+
+
+def __dir__() -> List[str]:
+    """Advertise both the eager core names and the lazy research models."""
+    return sorted(set(globals()) | set(_LAZY_MODELS))
