@@ -102,3 +102,30 @@ def test_rejects_non_2d_candidates(gp1d):
         acquisitions.score_candidates(
             gp, X_cand[0], params=params, batch=batch, bounds=bounds, best=0.0
         )
+
+
+def test_rejects_dim_mismatch(gp4d):
+    """(N, 1) candidates against a 4D model must fail loudly, not broadcast."""
+    gp, params, batch, bounds, _ = gp4d
+    X_wrong = jnp.linspace(0.0, 1.0, 8)[:, None]  # (8, 1) vs D=4
+    with pytest.raises(ValueError, match="D=4"):
+        acquisitions.score_candidates(
+            gp, X_wrong, params=params, batch=batch, bounds=bounds, best=0.0
+        )
+
+
+def test_rejects_per_candidate_acq_kwargs(gp1d):
+    """Per-candidate kwargs (LW_* weights) silently broadcast to (N, N) scores
+    in a naive vmap; score_candidates must reject them instead."""
+    gp, params, batch, bounds, X_cand = gp1d
+    weights = jnp.ones(X_cand.shape[0])  # one weight per candidate
+    with pytest.raises(ValueError, match="one score per candidate"):
+        acquisitions.score_candidates(
+            gp,
+            X_cand,
+            params=params,
+            batch=batch,
+            bounds=bounds,
+            acq_fn=acquisitions.LW_LCB,
+            weights=weights,
+        )

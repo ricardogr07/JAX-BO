@@ -241,16 +241,37 @@ def score_candidates(model, X_cand, *, params, batch, bounds, acq_fn=EI, **acq_k
     **acq_kwargs: Extra arguments forwarded to ``acq_fn``, e.g.
         ``best=float(np.min(batch['y']))`` for EI (best observed target in
         the same normalized space as ``batch['y']``), or ``kappa`` for LCB.
+        They are shared by ALL candidates, not mapped: per-candidate
+        arguments (e.g. the LW_* ``weights``) are rejected; use vmap
+        directly for those.
 
     Returns:
     np.ndarray: Acquisition scores, shape (N,).
+
+    Raises:
+    ValueError: If ``X_cand`` is not (N, D) with D matching the training
+        batch (a (N, 1) array against a 4D model would otherwise broadcast
+        silently inside predict), or if ``acq_fn`` returns more than one
+        score per candidate (per-candidate acq_kwargs).
     """
     X_cand = np.asarray(X_cand)
-    if X_cand.ndim != 2:
-        raise ValueError(f"X_cand must have shape (N, D); got shape {X_cand.shape}")
+    dim = batch["X"].shape[1]
+    if X_cand.ndim != 2 or X_cand.shape[1] != dim:
+        raise ValueError(
+            f"X_cand must have shape (N, D) with D={dim} matching the training "
+            f"batch; got shape {X_cand.shape}"
+        )
 
     def score_one(x):
         mean, std = model.predict(x[None, :], params=params, batch=batch, bounds=bounds)
         return acq_fn(mean, std, **acq_kwargs)
 
-    return np.reshape(vmap(score_one)(X_cand), (-1,))
+    scores = vmap(score_one)(X_cand)
+    if scores.size != X_cand.shape[0]:
+        raise ValueError(
+            f"acq_fn must return one score per candidate; got batched shape "
+            f"{scores.shape} for {X_cand.shape[0]} candidates. Per-candidate "
+            "acq_kwargs (e.g. LW_* weights) are not supported here; use vmap "
+            "directly instead."
+        )
+    return np.reshape(scores, (-1,))
