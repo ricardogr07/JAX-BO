@@ -133,6 +133,23 @@ def test_gp_1d_train_beats_every_restart_init(gp_1d):
     assert_train_converged(gp_1d, dim=1)
 
 
+def test_gp_1d_training_is_seed_robust(gp_1d):
+    """A different training key must reach the same fit quality.
+
+    Guards against the fixture seed being a lucky draw: the NLML landscape
+    is nonconvex, so convergence and held-out accuracy must hold for a
+    fresh restart key too (observed held-out max error 0.005 to 0.009
+    across keys 0, 1, 2, 5 during calibration).
+    """
+    gp, batch = gp_1d["gp"], gp_1d["batch"]
+    opt_other = gp.train(batch, random.PRNGKey(5), num_restarts=10)
+    X_dense = gp_1d["X"][:8]
+    X_mid = (X_dense[:-1] + X_dense[1:]) / 2.0
+    mu, _ = gp.predict(X_mid, params=opt_other, batch=batch, bounds=gp_1d["bounds"])
+    y_pred = denorm(mu, gp_1d["norm_const"])
+    assert float(jnp.max(jnp.abs(y_pred - f_1d(X_mid.flatten())))) < 0.12
+
+
 def test_gp_1d_predict_reproduces_training_targets(gp_1d):
     """On noiseless data the posterior mean must interpolate the training set.
 
@@ -233,6 +250,21 @@ def test_ei_matches_closed_form():
         assert jnp.allclose(got, expected, atol=1e-6)
 
 
+def test_ei_worse_than_best_is_frazier_upper_bound():
+    """Characterization: for mean > best, EI returns std * phi(z), not textbook.
+
+    With mean=1, std=1, best=0 (minimization) the textbook expected
+    improvement is delta * Phi(z) + std * phi(z) = -0.15866 + 0.24197 =
+    0.08332, but the implemented Frazier tutorial form drops the negative
+    delta * Phi(z) term and returns the std * phi(z) = 0.24197 upper bound.
+    Locked here so any change to that branch is deliberate; the deviation is
+    tracked in issue #55 (the acquisitions implementation is owned by the
+    2b/2c slices, not this test suite).
+    """
+    got = -acquisitions.EI(jnp.array([1.0]), jnp.array([1.0]), 0.0)
+    assert float(got) == pytest.approx(0.24197072451914337, abs=1e-6)
+
+
 def test_ei_nonnegative_and_monotone_in_mean():
     """Improvement is nonnegative and strictly falls as the mean worsens."""
     means = jnp.linspace(-2.0, 2.0, 21)
@@ -297,6 +329,24 @@ def test_gp_4d_predict_reproduces_training_targets(gp_4d):
     # prior-mean-only fit.
     assert float(jnp.max(jnp.abs(y_pred - gp_4d["y"]))) < 0.17
     assert jnp.all(std >= 0.0)
+
+
+def test_gp_4d_training_is_seed_robust(gp_4d):
+    """A different 4D training key must reach the same held-out quality.
+
+    Same rationale as the 1D twin: observed relative RMSE 0.04 to 0.05
+    across training keys 2, 4, 8 during calibration, all far under the
+    0.15 bound.
+    """
+    gp, batch = gp_4d["gp"], gp_4d["batch"]
+    opt_other = gp.train(batch, random.PRNGKey(8), num_restarts=10)
+    mu, _ = gp.predict(
+        gp_4d["X_test"], params=opt_other, batch=batch, bounds=gp_4d["bounds"]
+    )
+    y_pred = denorm(mu, gp_4d["norm_const"])
+    rel_rmse = jnp.sqrt(jnp.mean((y_pred - gp_4d["y_test"]) ** 2))
+    rel_rmse = rel_rmse / gp_4d["y_test"].std()
+    assert float(rel_rmse) < 0.15
 
 
 def test_gp_4d_predict_generalizes_to_held_out(gp_4d):

@@ -36,5 +36,10 @@ runs:
       shell: bash
       # --no-sync so uv run does not restore the locked jax over the lane pin.
       # Coverage is reported per lane (issue #29); pytest-cov comes from the
-      # locked dev group.
-      run: uv run --no-sync pytest tests --cov=jaxbo --cov-report=term-missing
+      # locked dev group. fail-under is a ratchet floor (total is ~19% today,
+      # dragged down by the untested extras-staged research models): it only
+      # stops coverage from silently vanishing. Ratchet it up once 2b moves
+      # the extras out and the RC re-audit sets the real target.
+      run: >-
+        uv run --no-sync pytest tests --cov=jaxbo
+        --cov-report=term-missing --cov-fail-under=15
