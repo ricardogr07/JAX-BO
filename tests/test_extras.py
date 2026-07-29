@@ -94,6 +94,10 @@ def test_missing_extra_raises_install_hint():
         import jaxbo
         import jaxbo.multifidelity
 
+        # Star import stays core-only: __all__ must not advertise the lazy
+        # extras, or this line would import them (adversarial review finding)
+        exec("from jaxbo import *", {})
+
         try:
             import jaxbo.mcmc
         except ImportError as e:
@@ -129,6 +133,29 @@ def test_missing_extra_raises_install_hint():
             assert "jaxbo[weighted]" in str(e), str(e)
         else:
             raise SystemExit("fit_gmm ran without the [weighted] extra")
+        """
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_one_model_import_loads_only_its_module():
+    """A historical single-model import must not execute sibling modules.
+
+    Regression for the adversarial review finding: an eager
+    jaxbo.multifidelity ``__init__`` made ``from jaxbo.models import
+    MultifidelityGP`` import every research model plus stax. Runs in a fresh
+    interpreter so this suite's own imports cannot mask the result.
+    """
+    code = textwrap.dedent(
+        """
+        import sys
+
+        from jaxbo.models import MultifidelityGP  # noqa: F401
+
+        loaded = {m for m in sys.modules if m.startswith("jaxbo.multifidelity")}
+        allowed = {"jaxbo.multifidelity", "jaxbo.multifidelity.multifidelity_gp"}
+        assert loaded <= allowed, f"eager sibling imports: {sorted(loaded - allowed)}"
+        assert "jax.example_libraries.stax" not in sys.modules, "stax leaked"
         """
     )
     subprocess.run([sys.executable, "-c", code], check=True)

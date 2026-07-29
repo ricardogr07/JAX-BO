@@ -13,41 +13,46 @@ currently pins nothing; it exists so ``pip install jaxbo[multifidelity]``
 stays a stable name if that ever changes. The GMM-weighted acquisition
 surface these models can drive (``fit_gmm``, ``LW_*`` criteria) lives behind
 the separate ``[weighted]`` extra and raises its own install hint when
-scikit-learn or KDEpy is missing. The jaxbo core never imports this package
-eagerly; ``jaxbo.models`` keeps the historical import paths alive as shims.
+scikit-learn or KDEpy is missing.
+
+Every class resolves lazily (PEP 562) so importing one model, here or
+through the historical ``jaxbo.models`` shims, never executes the sibling
+model modules. The jaxbo core never imports this package eagerly.
 """
 
-from jaxbo.multifidelity.deep_multifidelity_gp import DeepMultifidelityGP
-from jaxbo.multifidelity.deep_multifidelity_gp_multioutputs import (
-    DeepMultifidelityGP_MultiOutputs,
-)
-from jaxbo.multifidelity.gradient_gp import GradientGP
-from jaxbo.multifidelity.heterogeneous_multifidelity_gp import (
-    HeterogeneousMultifidelityGP,
-)
-from jaxbo.multifidelity.manifold_gp_model import ManifoldGP
-from jaxbo.multifidelity.manifold_gp_multioutputs import ManifoldGP_MultiOutputs
-from jaxbo.multifidelity.multifidelity_gp import MultifidelityGP
-from jaxbo.multifidelity.multiple_independent_heterogeneous_mfgp import (
-    MultipleIndependentHeterogeneousMFGP,
-)
-from jaxbo.multifidelity.multiple_independent_mfgp import MultipleIndependentMFGP
-from jaxbo.multifidelity.multiple_independent_output_gp_model import (
-    MultipleIndependentOutputsGP,
-)
-from jaxbo.multifidelity.serializable import deserializable_MF, serializable_MF
+from typing import List
 
-__all__ = [
-    "DeepMultifidelityGP",
-    "DeepMultifidelityGP_MultiOutputs",
-    "GradientGP",
-    "HeterogeneousMultifidelityGP",
-    "ManifoldGP",
-    "ManifoldGP_MultiOutputs",
-    "MultifidelityGP",
-    "MultipleIndependentHeterogeneousMFGP",
-    "MultipleIndependentMFGP",
-    "MultipleIndependentOutputsGP",
-    "deserializable_MF",
-    "serializable_MF",
-]
+# Attribute name to its submodule; each loads only on first access.
+_LAZY_ATTRS = {
+    "DeepMultifidelityGP": "deep_multifidelity_gp",
+    "DeepMultifidelityGP_MultiOutputs": "deep_multifidelity_gp_multioutputs",
+    "GradientGP": "gradient_gp",
+    "HeterogeneousMultifidelityGP": "heterogeneous_multifidelity_gp",
+    "ManifoldGP": "manifold_gp_model",
+    "ManifoldGP_MultiOutputs": "manifold_gp_multioutputs",
+    "MultifidelityGP": "multifidelity_gp",
+    "MultipleIndependentHeterogeneousMFGP": "multiple_independent_heterogeneous_mfgp",
+    "MultipleIndependentMFGP": "multiple_independent_mfgp",
+    "MultipleIndependentOutputsGP": "multiple_independent_output_gp_model",
+    "deserializable_MF": "serializable",
+    "serializable_MF": "serializable",
+}
+
+__all__ = sorted(_LAZY_ATTRS)
+
+
+def __getattr__(name: str):
+    """Resolve model classes and helpers lazily (PEP 562)."""
+    module_name = _LAZY_ATTRS.get(name)
+    if module_name is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    import importlib
+
+    obj = getattr(importlib.import_module(f"jaxbo.multifidelity.{module_name}"), name)
+    globals()[name] = obj  # cache so __getattr__ runs once per name
+    return obj
+
+
+def __dir__() -> List[str]:
+    """Advertise the lazily resolved names alongside the loaded ones."""
+    return sorted(set(globals()) | set(_LAZY_ATTRS))

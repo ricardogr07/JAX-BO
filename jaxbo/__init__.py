@@ -23,6 +23,10 @@ them: ``mcmc`` (the ``[mcmc]`` extra, numpyro), ``multifidelity`` (the
 scikit-learn plus KDEpy). Importing an extra without its dependencies raises
 an ImportError naming the ``pip install jaxbo[extra]`` fix. ``mcmc_models``
 and ``serializable`` stay importable as compatibility shims.
+
+``__all__`` deliberately lists only the core: ``from jaxbo import *``
+resolves every ``__all__`` name, so advertising the extras there would
+import them eagerly and defeat the lazy contract on a core-only install.
 """
 
 from typing import List
@@ -41,7 +45,8 @@ from jaxbo import (
 )
 
 # Modules resolved lazily via __getattr__ (PEP 562): the extras plus their
-# compatibility shims, never imported eagerly by the core.
+# compatibility shims, never imported eagerly by the core. NOT in __all__
+# (see the module docstring); __dir__ still advertises them.
 _LAZY_MODULES = ("mcmc", "mcmc_models", "multifidelity", "serializable", "weights")
 
 __all__ = [
@@ -50,16 +55,11 @@ __all__ = [
     "initializers",
     "input_priors",
     "kernels",
-    "mcmc",
-    "mcmc_models",
     "models",
-    "multifidelity",
     "optimizers",
     "priors",
-    "serializable",
     "test_functions",
     "utils",
-    "weights",
 ]
 
 
