@@ -33,7 +33,8 @@ jaxbo/                  core, target deps: jax, jaxlib, numpy, scipy
   optimizers.py         minimize_lbfgs / minimize_lbfgs_grad
   priors.py             uniform_prior, gaussian_prior et al
   initializers.py       trimmed; LHS via qmc.LatinHypercube seeded from the
-                        caller's rng_key (PR #44 pattern, see slice 1a)
+                        caller's rng_key, one split subkey per draw (PR #44
+                        pattern, see slice 1a)
   utils.py              trimmed
   test_functions.py     kept (no deps beyond the jax core + input_priors,
                         CI smoke + quickstart)
@@ -115,7 +116,7 @@ Current hygiene surface: LICENSE only. 0.2.0 adds the full set:
 | | 0b reposage baseline committed (`docs/audits/`), fix list feeds the slices, re-run at RC | S |
 | | 0c Benchmark harness + `jax.profiler` trace, baseline numbers committed | M |
 | | 0d SCOPE v2 (this document) | S |
-| 1 mechanical unbreak (W1 to W2) | 1a pyDOE to `scipy.stats.qmc`: call sites hold a JAX `rng_key`, not an int seed, so the shipped pattern (PR #44) is `qmc.LatinHypercube(d=dim, seed=int(rng_key[0])).random(n)`; dependency deleted | S |
+| 1 mechanical unbreak (W1 to W2) | 1a pyDOE to `scipy.stats.qmc`: call sites hold a JAX `rng_key`, not an int seed, so the shipped pattern (PR #44) is `qmc.LatinHypercube(d=dim, seed=int(rng_key[0])).random(n)`. Methods that draw more than once per `rng_key` (`fit_gmm` draws twice, `base_gpmodel.py:183, 189`; same shape in the MF variants) must `jax.random.split` the key first and seed each sampler from its own subkey, otherwise both draws instantiate the identical design. Dependency deleted | S |
 | | 1b `clip(a_min=)` sweep to positional + grep guard in CI so it never returns | S |
 | | 1c Packaging: `jax>=0.6,<0.11` pin, `requires-python >= 3.10`, prune and declare deps, lockfile committed, classifiers, metadata | S |
 | 2 refactor to core + extras (W2) | 2a Core package restructure per section 3, lazy extras, exports, mcmc GP rename, docstrings + type hints to the 70% gate. Acceptance adds: resolve or document the train/predict normalization asymmetry in the public API (section 2); break the core import graph so no core module transitively imports an extras dependency, severing `utils.py`'s sklearn/KDEpy/stax reach and splitting `models/__init__.py` (section 3) | L |
@@ -161,7 +162,7 @@ Current hygiene surface: LICENSE only. 0.2.0 adds the full set:
 Reviewed 2026-07-28 by GitHub Codex (PR #14 review) plus a local Codex adversarial pass; findings verified against code before amending.
 
 1. HIGH, amended section 2: documented the train/predict normalization asymmetry as the current contract; added a resolve-or-document item to slice 2a.
-2. MED, amended sections 3 and 7: pyDOE replacement rewritten to the PR #44 pattern (`qmc.LatinHypercube(d=dim, seed=int(rng_key[0])).random(n)`), since call sites hold a JAX rng_key, not an int seed.
+2. MED, amended sections 3 and 7: pyDOE replacement rewritten to the PR #44 pattern (`qmc.LatinHypercube(d=dim, seed=int(rng_key[0])).random(n)`), since call sites hold a JAX rng_key, not an int seed. Follow-up from the PR #14 review thread: methods drawing more than once per key (`fit_gmm` and the MF variants) split the key and seed each draw from its own subkey so no two draws share a design.
 3. HIGH, amended section 3: "exactly 4 dependencies" reframed as the 2a/2b TARGET; current import graph (pyDOE, sklearn, KDEpy, stax) named with file refs; import-graph break added to 2a acceptance.
 4. HIGH, amended section 3: lazy-extras claim reframed as target state; splitting the eager `models/__init__.py` added to 2a acceptance.
 5. MED, amended decision 7: extraction now covers the model-method weight paths; gmm_vars-driven LW_* flows move behind `[weighted]` with a clear error.
