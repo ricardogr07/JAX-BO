@@ -247,14 +247,10 @@ def score_candidates(model, X_cand, *, params, batch, bounds, acq_fn=EI, **acq_k
     """
     X_cand = np.asarray(X_cand)
     if X_cand.ndim != 2:
-        raise ValueError(
-            f"X_cand must have shape (N, D); got shape {X_cand.shape}"
-        )
+        raise ValueError(f"X_cand must have shape (N, D); got shape {X_cand.shape}")
 
     def score_one(x):
-        mean, std = model.predict(
-            x[None, :], params=params, batch=batch, bounds=bounds
-        )
+        mean, std = model.predict(x[None, :], params=params, batch=batch, bounds=bounds)
         return acq_fn(mean, std, **acq_kwargs)
 
     return np.reshape(vmap(score_one)(X_cand), (-1,))
