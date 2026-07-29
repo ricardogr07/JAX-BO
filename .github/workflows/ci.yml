@@ -40,6 +40,9 @@ jobs:
               - 'tests/**'
               - 'pyproject.toml'
               - 'tox.ini'
+              # CI installs frozen from the lockfile, so a lock-only
+              # dependency refresh must run the full test matrix too
+              - 'uv.lock'
             bench:
               - 'benchmarks/**'
             ci_config:
