@@ -27,9 +27,11 @@ runs:
       shell: bash
       run: |
         # np.clip a_min/a_max kwargs were removed in JAX 0.10; jaxbo is clean
-        # as of PR #43 and this guard keeps it that way.
-        if grep -rEn 'clip\(.*a_(min|max)=' jaxbo/; then
-          echo "::error::np.clip a_min/a_max kwargs found (removed in JAX 0.10); use positional min, max"
+        # as of PR #43 and this guard keeps it that way. Token-level match so
+        # multiline calls and spaced kwargs cannot slip past; the tokens appear
+        # nowhere else in the codebase.
+        if grep -rEn 'a_(min|max) *=' jaxbo/ examples/; then
+          echo "::error::a_min/a_max found (clip kwargs were removed in JAX 0.10); use positional min, max"
           exit 1
         fi
 
