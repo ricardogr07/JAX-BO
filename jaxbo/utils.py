@@ -1,27 +1,30 @@
 """Core normalization and standardization helpers for jaxbo models.
 
 This module is part of the jaxbo core (SCOPE.md section 3) and depends only
-on jax and numpy. The KDE machinery (``fit_kernel_density``) and the stax
-neural network initializers (``init_NN``, ``init_ResNet``,
-``init_MomentumResNet``) moved to the private staging modules
-:mod:`jaxbo._weights` and :mod:`jaxbo._nn`; their historical import paths on
-this module keep working through the lazy ``__getattr__`` below, without the
-core import graph ever reaching KDEpy or ``jax.example_libraries.stax``.
+on jax and numpy. The weighted-sampling machinery (``fit_kernel_density``,
+``compute_w_gmm``) moved to :mod:`jaxbo.weights` (the ``[weighted]`` extra)
+and the stax neural network initializers (``init_NN``, ``init_ResNet``,
+``init_MomentumResNet``) to :mod:`jaxbo.multifidelity.nn` (the
+``[multifidelity]`` extra); their historical import paths on this module
+keep working through the lazy ``__getattr__`` below, without the core import
+graph ever reaching KDEpy, scikit-learn, or ``jax.example_libraries.stax``.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Dict, List, Tuple
 
 import jax.numpy as np
-from jax import jit, vmap
-from jax.scipy.stats import multivariate_normal
+from jax import jit
 
-# Names that moved out of the core, staged for the 2b extras split
-# (SCOPE.md decision 7): attribute name to its new home.
+# Names that moved out of the core with the extras split (SCOPE.md
+# decision 7): attribute name to its new home. Accessing a [weighted] name
+# without scikit-learn and KDEpy installed raises the jaxbo.weights
+# ImportError naming pip install jaxbo[weighted].
 _MOVED = {
-    "fit_kernel_density": "jaxbo._weights",
-    "init_NN": "jaxbo._nn",
-    "init_ResNet": "jaxbo._nn",
-    "init_MomentumResNet": "jaxbo._nn",
+    "fit_kernel_density": "jaxbo.weights",
+    "compute_w_gmm": "jaxbo.weights",
+    "init_NN": "jaxbo.multifidelity.nn",
+    "init_ResNet": "jaxbo.multifidelity.nn",
+    "init_MomentumResNet": "jaxbo.multifidelity.nn",
 }
 
 
@@ -324,37 +327,3 @@ def standardize_HeterogeneousMultifidelityGP(
         "sigma_y": sigma_y,
     }
     return batch, norm_const
-
-
-@jit
-def compute_w_gmm(x: np.ndarray, **kwargs: Any) -> np.ndarray:
-    """
-    Computes the weighted sum of Gaussian Mixture Model (GMM) components at a given point.
-
-    This function normalizes the input `x` to the unit hypercube defined by the provided bounds,
-    then evaluates the weighted sum of multivariate normal probability density functions (PDFs)
-    at the normalized point using the parameters of the GMM.
-
-    Args:
-        x (np.ndarray): The input point(s) at which to evaluate the GMM, shape (..., D).
-        **kwargs: Additional keyword arguments, including:
-            - 'bounds' (dict): Dictionary with keys 'lb' and 'ub' for lower and upper bounds (arrays).
-            - 'gmm_vars' (tuple): Tuple containing (weights, means, covariances) of the GMM:
-                - weights (np.ndarray): Weights of the GMM components, shape (K,).
-                - means (np.ndarray): Means of the GMM components, shape (K, D).
-                - covs (np.ndarray): Covariance matrices of the GMM components, shape (K, D, D).
-
-    Returns:
-        float or np.ndarray: The weighted sum of GMM component PDFs evaluated at `x`.
-    """
-    bounds = kwargs["bounds"]
-    lb = bounds["lb"]
-    ub = bounds["ub"]
-    x = (x - lb) / (ub - lb)
-    weights, means, covs = kwargs["gmm_vars"]
-
-    def gmm_mode(w, mu, cov):
-        return w * multivariate_normal.pdf(x, mu, cov)
-
-    w = np.sum(vmap(gmm_mode)(weights, means, covs), axis=0)
-    return w

@@ -16,9 +16,13 @@
 """jaxbo: Bayesian optimization on JAX.
 
 The eager namespace below is the core (SCOPE.md section 3): it imports with
-only the core dependencies (jax, jaxlib, numpy, scipy). ``mcmc_models``
-(numpyro) is resolved lazily on first attribute access so ``import jaxbo``
-never pays for it; slice 2b moves it into the ``[mcmc]`` optional extra.
+only the core dependencies (jax, jaxlib, numpy, scipy). The extras are
+resolved lazily on first attribute access so ``import jaxbo`` never pays for
+them: ``mcmc`` (the ``[mcmc]`` extra, numpyro), ``multifidelity`` (the
+``[multifidelity]`` extra), and ``weights`` (the ``[weighted]`` extra,
+scikit-learn plus KDEpy). Importing an extra without its dependencies raises
+an ImportError naming the ``pip install jaxbo[extra]`` fix. ``mcmc_models``
+and ``serializable`` stay importable as compatibility shims.
 """
 
 from typing import List
@@ -36,9 +40,9 @@ from jaxbo import (
     utils,
 )
 
-# Modules resolved lazily via __getattr__ (PEP 562): extras staging, never
-# imported eagerly by the core.
-_LAZY_MODULES = ("mcmc_models",)
+# Modules resolved lazily via __getattr__ (PEP 562): the extras plus their
+# compatibility shims, never imported eagerly by the core.
+_LAZY_MODULES = ("mcmc", "mcmc_models", "multifidelity", "serializable", "weights")
 
 __all__ = [
     "acquisitions",
@@ -46,12 +50,16 @@ __all__ = [
     "initializers",
     "input_priors",
     "kernels",
+    "mcmc",
     "mcmc_models",
     "models",
+    "multifidelity",
     "optimizers",
     "priors",
+    "serializable",
     "test_functions",
     "utils",
+    "weights",
 ]
 
 
