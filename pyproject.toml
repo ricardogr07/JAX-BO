@@ -25,6 +25,12 @@ dependencies = [
   "numpyro"
 ]
 
+[project.optional-dependencies]
+bench = [
+  "pytest",
+  "pytest-benchmark",
+]
+
 [project.urls]
 homepage = "https://github.com/ricardogr07/JAX-BO"
 repository = "https://github.com/ricardogr07/JAX-BO"
