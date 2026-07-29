@@ -10,6 +10,11 @@ transfer. This is the loop a future batched score_candidates replaces.
 A secondary case keeps the fused gp.acquisition per-candidate variant
 for comparison (single fused predict + EI graph per candidate).
 
+The batched case scores all 256 candidates in one
+acquisitions.score_candidates call (issue #28), the replacement for the
+consumer loop above; its delta against bench_ei_consumer_path_256 is the
+number that gates the claim.
+
 First-call latency (trace + compile + execute) is timed separately and
 reported as first_call_latency_s in extra_info.
 """
@@ -73,3 +78,27 @@ def bench_ei_fused_acquisition_256(benchmark, trained_128):
         return jax.block_until_ready(vals)
 
     benchmark(ei_loop)
+
+
+def bench_ei_score_candidates_256(benchmark, trained_128):
+    gp, kwargs = trained_128
+    # Same inputs as the consumer-path bench: params/batch/bounds only,
+    # same seed, same Dirichlet candidates.
+    pk = {k: kwargs[k] for k in ("params", "batch", "bounds")}
+    best = float(kwargs["batch"]["y"].min())
+    rng = onp.random.default_rng(SEED + 1)
+    X_cand = jnp.asarray(rng.dirichlet(onp.ones(DIM), size=N_CANDIDATES))
+
+    def ei_batched():
+        return jax.block_until_ready(
+            acquisitions.score_candidates(gp, X_cand, **pk, best=best)
+        )
+
+    t0 = time.perf_counter()
+    ei_batched()
+    first_s = time.perf_counter() - t0
+
+    benchmark.extra_info["candidates"] = N_CANDIDATES
+    benchmark.extra_info["first_call_latency_s"] = round(first_s, 4)
+
+    benchmark(ei_batched)

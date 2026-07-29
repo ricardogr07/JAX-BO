@@ -1,8 +1,9 @@
 import jax.numpy as np
-from jax import jit
+from jax import jit, vmap
 from jax.scipy.stats import norm
 
-# Caution: all functions are designed for single point evaluation (use vmap to vectorize)
+# Caution: all functions below are designed for single point evaluation; use
+# score_candidates (or vmap directly) to score a batch of candidates.
 # See derivation in:
 # https://people.orie.cornell.edu/pfrazier/Presentations/2011.11.INFORMS.Tutorial.pdf
 
@@ -200,3 +201,60 @@ def LW_CLSF(
         np.log(std + 1e-8) + np.log(weights + 1e-8)
     )
     return acq[0]
+
+
+def score_candidates(model, X_cand, *, params, batch, bounds, acq_fn=EI, **acq_kwargs):
+    """
+    Scores a batch of candidate points in one vmapped pass.
+
+    Replaces the per-candidate Python loop over ``model.predict`` plus a
+    single-point acquisition (the shelter-pulse pattern: reshape each
+    candidate to (1, D), predict, score, ``float()``), which pays two jit
+    dispatches and a device to host sync per candidate. Here the whole
+    candidate set is scored in a single batched call; the Cholesky factor
+    of the training covariance does not depend on the candidate, so vmap
+    computes it once, not N times.
+
+    Shape conventions:
+    - X_cand has shape (N, D) and lives in the RAW domain. Like
+      ``model.predict``, each candidate is normalized internally against
+      ``bounds``; do NOT pre-normalize it. ``batch``, by contrast, must be
+      the ALREADY NORMALIZED training batch, exactly as passed to
+      ``model.train`` (mixing these up fails silently, see jaxbo.gp.GP).
+    - Each candidate is scored as a single (1, D) point, so ``acq_fn``
+      sees the single-point shapes used throughout this module: ``mean``
+      of shape (1, 1), ``std`` of shape (1,), the ``[0]`` indexing
+      convention.
+    - Returns an (N,) array of scores, one per candidate, in candidate
+      order. Lower is better for every acquisition in this module (EI is
+      returned negated), so the next point is ``X_cand[np.argmin(scores)]``.
+
+    Parameters:
+    model: Trained GP model exposing ``predict(X_star, params=, batch=, bounds=)``,
+        e.g. ``jaxbo.gp.GP``.
+    X_cand (np.ndarray): Candidate points, shape (N, D), raw domain.
+    params (np.ndarray): Trained hyperparameters, as returned by ``model.train``.
+    batch (dict): The already normalized training batch ({'X', 'y'}) used to train.
+    bounds (dict): {'lb', 'ub'} domain bounds predict normalizes against.
+    acq_fn (callable): Single-point acquisition taking (mean, std, **acq_kwargs).
+        Defaults to EI.
+    **acq_kwargs: Extra arguments forwarded to ``acq_fn``, e.g.
+        ``best=float(np.min(batch['y']))`` for EI (best observed target in
+        the same normalized space as ``batch['y']``), or ``kappa`` for LCB.
+
+    Returns:
+    np.ndarray: Acquisition scores, shape (N,).
+    """
+    X_cand = np.asarray(X_cand)
+    if X_cand.ndim != 2:
+        raise ValueError(
+            f"X_cand must have shape (N, D); got shape {X_cand.shape}"
+        )
+
+    def score_one(x):
+        mean, std = model.predict(
+            x[None, :], params=params, batch=batch, bounds=bounds
+        )
+        return acq_fn(mean, std, **acq_kwargs)
+
+    return np.reshape(vmap(score_one)(X_cand), (-1,))
