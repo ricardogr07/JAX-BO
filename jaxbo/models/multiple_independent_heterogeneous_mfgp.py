@@ -137,7 +137,7 @@ class MultipleIndependentHeterogeneousMFGP(GPmodel):
             # Compute predictive mean, std
             mu = np.matmul(k_pX, alpha)
             cov = k_pp - np.matmul(k_pX, beta)
-            std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+            std = np.sqrt(np.clip(np.diag(cov), 0.0))
             if k > 0:
                 mu = mu * norm_const["sigma_y"] + norm_const["mu_y"]
                 std = std * norm_const["sigma_y"]
@@ -182,7 +182,7 @@ class MultipleIndependentHeterogeneousMFGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), a_min=0.0))
+        std = np.sqrt(np.clip(np.diag(cov), 0.0))
 
         return mu, std
 

@@ -42,7 +42,7 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative constrained expected improvement.
     """
     delta = -(mean[0, :] - best)
-    deltap = np.clip(delta, a_min=0.0)
+    deltap = np.clip(delta, 0.0)
     Z = delta / std[0, :]
     EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std[0, :] * norm.pdf(Z)
     constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
