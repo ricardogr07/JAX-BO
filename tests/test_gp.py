@@ -8,8 +8,18 @@ function level and through the model dispatch.
 
 All randomness is seeded; the trained models are module-scoped fixtures so
 the L-BFGS restarts run once per dimensionality and every test reuses them.
+
+This module runs in float64 (see ``_float64_mode``): in float32 the NLML
+multi-start is a platform lottery. On several CI lanes all 10 restarts of
+the 1D fixture landed in the degenerate tiny-lengthscale optimum (NLML
+12.77 instead of -28) that interpolates the data and predicts the prior
+mean everywhere else, while the same seeds escaped it locally. Under
+float64 every calibration seed converges to the same broad optimum, so
+value asserts are meaningful cross-platform. The consumer-default float32
+path stays covered by ``test_compat``.
 """
 
+import jax
 import jax.numpy as jnp
 import pytest
 from jax import random, vmap
@@ -34,15 +44,16 @@ def f_1d(x):
     return (x - TRUE_MIN_1D) ** 2
 
 
-# 4D problem: quadratic bowl on the RAW domain [-1, 2]^4.
-LB_4D = -1.0 * jnp.ones(4)
-UB_4D = 2.0 * jnp.ones(4)
-CENTER_4D = jnp.array([0.2, 0.5, 0.8, 1.1])
+# 4D problem: quadratic bowl on the RAW domain [-1, 2]^4. Kept as plain
+# python constants so all arrays are created inside fixtures, under the
+# float64 mode below, never at import time.
+LB_4D, UB_4D = -1.0, 2.0
+CENTER_4D = (0.2, 0.5, 0.8, 1.1)
 
 
 def f_4d(x):
     """Separable 4D quadratic bowl with its minimum at ``CENTER_4D``."""
-    return jnp.sum((x - CENTER_4D) ** 2, axis=-1)
+    return jnp.sum((x - jnp.array(CENTER_4D)) ** 2, axis=-1)
 
 
 def make_gp(lb, ub, criterion="EI"):
@@ -51,8 +62,20 @@ def make_gp(lb, ub, criterion="EI"):
     return GP({"kernel": "RBF", "input_prior": prior, "criterion": criterion})
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _float64_mode():
+    """Run this module in float64, restore float32 for the rest of the suite.
+
+    See the module docstring: float32 makes the multi-start NLML landscape
+    a platform lottery, float64 makes the value asserts reproducible.
+    """
+    jax.config.update("jax_enable_x64", True)
+    yield
+    jax.config.update("jax_enable_x64", False)
+
+
 @pytest.fixture(scope="module")
-def gp_1d():
+def gp_1d(_float64_mode):
     """Train a 1D GP once and share model, data, and params across tests."""
     lb, ub = jnp.array([LB_1D]), jnp.array([UB_1D])
     bounds = {"lb": lb, "ub": ub}
@@ -61,9 +84,10 @@ def gp_1d():
     y = f_1d(X.flatten())
     batch, norm_const = normalize(X, y, bounds)
     gp = make_gp(lb, ub)
-    # 10 restarts on purpose: fewer restarts can land in the degenerate
-    # tiny-lengthscale NLML optimum that interpolates the data but predicts
-    # the prior mean everywhere else.
+    # 10 restarts plus float64 on purpose: with fewer restarts, or in
+    # float32, the multi-start can land in the degenerate tiny-lengthscale
+    # NLML optimum that interpolates the data but predicts the prior mean
+    # everywhere else (module docstring).
     opt_params = gp.train(batch, random.PRNGKey(0), num_restarts=10)
     return {
         "gp": gp,
@@ -79,14 +103,15 @@ def gp_1d():
 
 
 @pytest.fixture(scope="module")
-def gp_4d():
+def gp_4d(_float64_mode):
     """Train a 4D GP once on 32 seeded samples and share it across tests."""
-    bounds = {"lb": LB_4D, "ub": UB_4D}
-    prior = uniform_prior(LB_4D, UB_4D)
+    lb, ub = LB_4D * jnp.ones(4), UB_4D * jnp.ones(4)
+    bounds = {"lb": lb, "ub": ub}
+    prior = uniform_prior(lb, ub)
     X = prior.sample(random.PRNGKey(1), 32)
     y = f_4d(X)
     batch, norm_const = normalize(X, y, bounds)
-    gp = make_gp(LB_4D, UB_4D)
+    gp = make_gp(lb, ub)
     opt_params = gp.train(batch, random.PRNGKey(2), num_restarts=10)
     X_test = prior.sample(random.PRNGKey(3), 64)
     return {
@@ -138,8 +163,8 @@ def test_gp_1d_training_is_seed_robust(gp_1d):
 
     Guards against the fixture seed being a lucky draw: the NLML landscape
     is nonconvex, so convergence and held-out accuracy must hold for a
-    fresh restart key too (observed held-out max error 0.005 to 0.009
-    across keys 0, 1, 2, 5 during calibration).
+    fresh restart key too (observed held-out max error 7e-5 to 2e-4 in
+    float64 across keys 0, 1, 2, 5 during calibration).
     """
     gp, batch = gp_1d["gp"], gp_1d["batch"]
     opt_other = gp.train(batch, random.PRNGKey(5), num_restarts=10)
@@ -147,7 +172,7 @@ def test_gp_1d_training_is_seed_robust(gp_1d):
     X_mid = (X_dense[:-1] + X_dense[1:]) / 2.0
     mu, _ = gp.predict(X_mid, params=opt_other, batch=batch, bounds=gp_1d["bounds"])
     y_pred = denorm(mu, gp_1d["norm_const"])
-    assert float(jnp.max(jnp.abs(y_pred - f_1d(X_mid.flatten())))) < 0.12
+    assert float(jnp.max(jnp.abs(y_pred - f_1d(X_mid.flatten())))) < 0.02
 
 
 def test_gp_1d_predict_reproduces_training_targets(gp_1d):
@@ -164,13 +189,13 @@ def test_gp_1d_predict_reproduces_training_targets(gp_1d):
         bounds=gp_1d["bounds"],
     )
     y_pred = denorm(mu, gp_1d["norm_const"])
-    # Observed max error ~5e-3 on the 11.76 target range; 0.12 (about 1
-    # percent of the range) keeps a wide cross-platform float32 margin while
-    # still rejecting a degenerate fit.
-    assert float(jnp.max(jnp.abs(y_pred - gp_1d["y"]))) < 0.12
-    # Nearly noiseless interpolation: the model is confident at its own data.
+    # Observed max error ~2e-4 (float64) on the 11.76 target range; 0.02
+    # keeps a ~100x margin while rejecting the degenerate fit (error ~6).
+    assert float(jnp.max(jnp.abs(y_pred - gp_1d["y"]))) < 0.02
+    # Nearly noiseless interpolation: the model is confident at its own data
+    # (observed max std ~1.4e-4; the degenerate fit sits at ~0.06).
     assert jnp.all(std >= 0.0)
-    assert float(jnp.max(std)) < 0.05
+    assert float(jnp.max(std)) < 0.01
 
 
 def test_gp_1d_predict_interpolates_held_out(gp_1d):
@@ -185,9 +210,9 @@ def test_gp_1d_predict_interpolates_held_out(gp_1d):
     )
     y_pred = denorm(mu, gp_1d["norm_const"])
     y_true = f_1d(X_mid.flatten())
-    # Observed max error ~5e-3 across seeds on the 11.76 target range; see
-    # the round-trip test note for the margin rationale.
-    assert float(jnp.max(jnp.abs(y_pred - y_true))) < 0.12
+    # Observed max error ~2e-4 across seeds (float64); see the round-trip
+    # test note for the margin rationale.
+    assert float(jnp.max(jnp.abs(y_pred - y_true))) < 0.02
 
 
 def test_gp_1d_uncertainty_grows_in_data_gap(gp_1d):
@@ -200,9 +225,11 @@ def test_gp_1d_uncertainty_grows_in_data_gap(gp_1d):
         bounds=gp_1d["bounds"],
     )
     std_train, std_gap = std[:-1], std[-1]
-    # Observed ratio 2.9 to 3.9 across seeds; 2.0 keeps margin while still
-    # requiring the gap to be clearly less certain than the data.
-    assert float(std_gap / jnp.max(std_train)) > 2.0
+    # The broad float64 optimum is confident everywhere (std ~1e-4), so the
+    # contrast is modest but consistent: observed ratio 1.1 to 1.2 across
+    # seeds. Require both strict ordering and a floor on the ratio.
+    assert std_gap > jnp.max(std_train)
+    assert float(std_gap / jnp.max(std_train)) > 1.05
 
 
 def test_gp_1d_normalization_contract_is_asymmetric(gp_1d):
@@ -324,19 +351,18 @@ def test_gp_4d_predict_reproduces_training_targets(gp_4d):
         bounds=gp_4d["bounds"],
     )
     y_pred = denorm(mu, gp_4d["norm_const"])
-    # Observed max error ~0.017 on the 8.42 target range across seeds; 0.17
-    # (2 percent of the range) keeps a ~10x margin while rejecting a
-    # prior-mean-only fit.
-    assert float(jnp.max(jnp.abs(y_pred - gp_4d["y"]))) < 0.17
+    # Observed max error ~2e-5 (float64) on the 8.42 target range; 0.05
+    # keeps a huge margin while rejecting a prior-mean-only fit.
+    assert float(jnp.max(jnp.abs(y_pred - gp_4d["y"]))) < 0.05
     assert jnp.all(std >= 0.0)
 
 
 def test_gp_4d_training_is_seed_robust(gp_4d):
     """A different 4D training key must reach the same held-out quality.
 
-    Same rationale as the 1D twin: observed relative RMSE 0.04 to 0.05
-    across training keys 2, 4, 8 during calibration, all far under the
-    0.15 bound.
+    Same rationale as the 1D twin: observed relative RMSE 1e-4 to 4e-4
+    (float64) across training keys 2, 4, 8 during calibration, all far
+    under the 0.05 bound.
     """
     gp, batch = gp_4d["gp"], gp_4d["batch"]
     opt_other = gp.train(batch, random.PRNGKey(8), num_restarts=10)
@@ -346,7 +372,7 @@ def test_gp_4d_training_is_seed_robust(gp_4d):
     y_pred = denorm(mu, gp_4d["norm_const"])
     rel_rmse = jnp.sqrt(jnp.mean((y_pred - gp_4d["y_test"]) ** 2))
     rel_rmse = rel_rmse / gp_4d["y_test"].std()
-    assert float(rel_rmse) < 0.15
+    assert float(rel_rmse) < 0.05
 
 
 def test_gp_4d_predict_generalizes_to_held_out(gp_4d):
@@ -368,6 +394,6 @@ def test_gp_4d_predict_generalizes_to_held_out(gp_4d):
     y_pred = denorm(mu, gp_4d["norm_const"])
     rel_rmse = jnp.sqrt(jnp.mean((y_pred - gp_4d["y_test"]) ** 2))
     rel_rmse = rel_rmse / gp_4d["y_test"].std()
-    # Observed relative RMSE ~0.05 across seeds; 0.15 keeps a 3x margin
-    # while a mean-only predictor would score ~1.0.
-    assert float(rel_rmse) < 0.15
+    # Observed relative RMSE ~1e-4 across seeds (float64); 0.05 keeps a
+    # huge margin while a mean-only predictor would score ~1.0.
+    assert float(rel_rmse) < 0.05
