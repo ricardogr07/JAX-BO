@@ -26,7 +26,11 @@ runs:
 
     - name: Apply per-lane jax pin
       shell: bash
-      run: uv pip install "${{ inputs.jax-spec }}"
+      # numpyro is named here so it co-resolves with the lane's jax: it tracks
+      # jax.extend closely (the locked numpyro 0.21.0 imports jit_p from
+      # jax.extend.core.primitives, which jax 0.5.3 lacks), so floor lanes need
+      # uv to pick the numpyro that matches the pinned jax, not the locked one.
+      run: uv pip install "${{ inputs.jax-spec }}" numpyro
 
     - name: Run tests
       shell: bash
