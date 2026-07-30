@@ -80,7 +80,7 @@ shares.
 |---|---|
 | `bench_train.py` | `train_warm_instance`: one GP instance, first call untimed, re-trained in the timed rounds (jit cache hot), n = 32 / 128 / 512, `num_restarts=3`. `train_fresh_instance`: a new `GP(...)` constructed inside every timed round and trained once (n=128), the consumer pattern; every round pays the instance-keyed recompilation |
 | `bench_predict.py` | one batched `GP.predict` over 256 4D points after one train (n=128) |
-| `bench_acquisition.py` | `ei_consumer_path`: per candidate, a `(1, 4)` `gp.predict` then `acquisitions.EI(mu, std, best)` then a host `float()`, over 256 candidates (the exact shelter-pulse loop). `ei_fused_acquisition`: the same loop through the fused `gp.acquisition` graph, kept for comparison |
+| `bench_acquisition.py` | `ei_consumer_path`: per candidate, a `(1, 4)` `gp.predict` then `acquisitions.EI(mu, std, best)` then a host `float()`, over 256 candidates (the exact shelter-pulse loop). `ei_fused_acquisition`: the same loop through the fused `gp.acquisition` graph, kept for comparison. `ei_score_candidates`: all 256 candidates in one batched `acquisitions.score_candidates` call, the loop's replacement (issue #28) |
 
 Every bench times its first call separately and reports it as
 `first_call_latency_s` in `extra_info`. First-call latency conflates trace +
