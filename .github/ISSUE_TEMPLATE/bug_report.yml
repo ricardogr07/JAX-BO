@@ -1,0 +1,38 @@
+name: Bug report
+description: Something in jaxbo is broken or behaves unexpectedly
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: >-
+        The smallest script that shows the problem. Include the data shapes
+        and the seed if randomness is involved.
+      render: python
+    validations:
+      required: true
+  - type: textarea
+    id: versions
+    attributes:
+      label: Versions
+      description: Output of the command below.
+      placeholder: |
+        python -c "import sys, jax, jaxlib, numpy, scipy, jaxbo; print(sys.version); print('jax', jax.__version__, 'jaxlib', jaxlib.__version__); print('numpy', numpy.__version__, 'scipy', scipy.__version__)"
+      render: text
+    validations:
+      required: true
+  - type: input
+    id: install
+    attributes:
+      label: How did you install jaxbo?
+      placeholder: pip install jaxbo / pip install jaxbo[all] / from source
+    validations:
+      required: false

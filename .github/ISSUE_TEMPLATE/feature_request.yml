@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose an addition or change to jaxbo
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that jaxbo makes hard today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: >-
+        What would the API look like? A sketch of the call you wish existed
+        is more useful than prose.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you use today, or other designs you rejected.
+    validations:
+      required: false
