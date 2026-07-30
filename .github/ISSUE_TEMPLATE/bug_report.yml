@@ -25,7 +25,7 @@ body:
       label: Versions
       description: Output of the command below.
       placeholder: |
-        python -c "import sys, jax, jaxlib, numpy, scipy, jaxbo; print(sys.version); print('jax', jax.__version__, 'jaxlib', jaxlib.__version__); print('numpy', numpy.__version__, 'scipy', scipy.__version__)"
+        python -c "import sys, jax, jaxlib, numpy, scipy, jaxbo; print(sys.version); print('jax', jax.__version__, 'jaxlib', jaxlib.__version__); print('numpy', numpy.__version__, 'scipy', scipy.__version__); print('jaxbo', jaxbo.__version__)"
       render: text
     validations:
       required: true
