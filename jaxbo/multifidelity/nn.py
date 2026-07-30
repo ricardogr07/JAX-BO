@@ -1,11 +1,10 @@
-"""Private staging module for the neural network feature maps.
+"""Neural network feature maps for the deep and manifold multifidelity models.
 
-Holds the ``jax.example_libraries.stax`` surface used only by the deep and
-manifold multifidelity models, which the ``[multifidelity]`` optional extra
-will own after slice 2b (SCOPE.md section 3). Nothing in the jaxbo core may
-import this module eagerly: importing it pulls stax, so it must only ever
-load from a research model. ``jaxbo.utils`` forwards the historical import
-paths lazily.
+Holds the ``jax.example_libraries.stax`` surface (MLP, ResNet, and
+MomentumResNet initializers) that warps inputs before the GP kernel. It
+belongs to the ``[multifidelity]`` extra (SCOPE.md section 3), so the jaxbo
+core never imports it eagerly; the historical ``jaxbo.utils.init_*`` paths
+keep working through a lazy forward.
 """
 
 from typing import Callable, List, Sequence, Tuple
@@ -75,12 +74,11 @@ def init_ResNet(
     """
 
     def init(rng_key):
-        # Initialize neural net params
-        def init_layer(key, d_in, d_out):
-            k1, k2 = random.split(key)
+        """Initialize the ResNet parameters from a PRNG key."""
 
-            # W = random.normal(k1, (d_in, d_out))
-            # b = random.normal(k2, (d_out,))
+        def init_layer(key, d_in, d_out):
+            """Draw one layer's Glorot-scaled weights and zero bias."""
+            k1, k2 = random.split(key)
 
             glorot_stddev = 1.0 / np.sqrt((d_in + d_out) / 2.0)
             W = glorot_stddev * random.normal(k1, (d_in, d_out))
@@ -101,6 +99,7 @@ def init_ResNet(
         return params
 
     def mlp(params, inputs):
+        """One tanh MLP pass over the parameter list."""
         for W, b in params:
             outputs = np.dot(inputs, W) + b
             inputs = np.tanh(outputs)
@@ -109,6 +108,7 @@ def init_ResNet(
     if is_spect == 1:
 
         def apply(params, inputs):
+            """Apply the spectrally normalized residual blocks."""
             inputs = (
                 params[-2]
                 / np.sqrt(np.var(inputs, axis=0))
@@ -123,6 +123,7 @@ def init_ResNet(
     else:
 
         def apply(params, inputs):
+            """Apply the residual blocks."""
             for i in range(depth):
                 inputs = mlp(params, inputs) + inputs
             return inputs
@@ -153,8 +154,10 @@ def init_MomentumResNet(
     """
 
     def init(rng_key):
-        # Initialize neural net params
+        """Initialize the MomentumResNet parameters from a PRNG key."""
+
         def init_layer(key, d_in, d_out):
+            """Draw one layer's normal weights and bias."""
             k1, k2 = random.split(key)
             W = random.normal(k1, (d_in, d_out))
             b = random.normal(k2, (d_out,))
@@ -165,6 +168,7 @@ def init_MomentumResNet(
         return params
 
     def mlp(params, inputs):
+        """One tanh MLP pass over the parameter list."""
         for W, b in params:
             outputs = np.dot(inputs, W) + b
             inputs = np.tanh(outputs)
@@ -173,6 +177,7 @@ def init_MomentumResNet(
     if vel_zeros == 1:
 
         def apply(params, inputs):
+            """Apply momentum updates from a zero-initialized velocity."""
             velocity = np.zeros_like(inputs)
             for i in range(depth):
                 velocity = gamma * velocity + (1.0 - gamma) * mlp(params, inputs)
@@ -182,6 +187,7 @@ def init_MomentumResNet(
     else:
 
         def apply(params, inputs):
+            """Apply momentum updates from an MLP-initialized velocity."""
             velocity = mlp(params, inputs)
             for i in range(depth):
                 velocity = gamma * velocity + (1.0 - gamma) * mlp(params, inputs)

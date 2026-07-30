@@ -1,9 +1,10 @@
 """Core Gaussian process models: the ``GPmodel`` base class and the exact ``GP``.
 
 This module is the heart of the jaxbo core (SCOPE.md section 3). It must stay
-importable with only the core dependencies (jax, jaxlib, numpy, scipy):
-extras-bound packages (scikit-learn, KDEpy) are imported lazily inside the
-single method that needs them (``GPmodel.fit_gmm``), never at module level.
+importable with only the core dependencies (jax, jaxlib, numpy, scipy): the
+weighted-sampling surface (``fit_gmm``, the ``LW_*`` acquisition branches)
+lives in :mod:`jaxbo.weights` (the ``[weighted]`` extra) and is imported
+lazily inside the methods that need it, never at module level.
 """
 
 from abc import ABC
@@ -13,13 +14,12 @@ from typing import Any, Callable, Dict, Tuple
 import jax.numpy as np
 import numpy as onp
 from jax import jit, random, vjp, vmap
-from jax.random import PRNGKey, split
+from jax.random import PRNGKey
 from jax.scipy.linalg import cholesky, solve_triangular
 from scipy.stats import qmc
 
 import jaxbo.acquisitions as acquisitions
 import jaxbo.kernels as kernels
-import jaxbo.utils as utils
 from jaxbo import initializers
 from jaxbo.optimizers import minimize_lbfgs_grad
 
@@ -153,84 +153,30 @@ class GPmodel(ABC):
     def fit_gmm(
         self, num_comp: int = 2, N_samples: int = 10000, **kwargs
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        """
-        Fit a Gaussian Mixture Model (GMM) to reweight the prior distribution over inputs
-        based on current model predictions. Used to enable prior-informed acquisition functions
-        such as LW-LCB or LW-US.
+        """Fit a GMM that reweights the input prior by the model's predictions.
 
-        This is done by:
-        1. Sampling uniformly over the input space.
-        2. Evaluating model predictions.
-        3. Estimating a kernel density for outputs.
-        4. Reweighting by prior / posterior to prioritize informative regions.
-        5. Sampling a new input set using the resulting importance weights.
-        6. Fitting a GMM to this resampled set.
+        Delegates to :func:`jaxbo.weights.fit_gmm` (the [weighted] extra);
+        calling it without scikit-learn and KDEpy installed raises an
+        ImportError naming ``pip install jaxbo[weighted]``. See that function
+        for the full contract.
 
         Args:
             num_comp (int): Number of Gaussian components in the GMM.
-            N_samples (int): Number of samples to use for reweighting and training the GMM.
-            **kwargs:
-                - bounds (dict): Keys 'lb' and 'ub' defining lower and upper bounds of input domain.
-                - rng_key (jax.random.PRNGKey): JAX random seed key for reproducibility.
-                - norm_const (optional): Normalization constants, not used here but passed through.
-                - All other kwargs are forwarded to `self.predict`.
+            N_samples (int): Number of samples used for reweighting and
+                training the GMM.
+            **kwargs: 'bounds' and 'rng_key' plus everything ``self.predict``
+                needs.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray, np.ndarray]:
-                - weights: GMM component weights.
-                - means: Component means.
-                - covariances: Component covariance matrices.
-
-        Notes:
-            - This assumes self.predict returns only the predictive mean as [0]-th element.
-            - LHS is used for more uniform coverage of the input domain.
+            Tuple[np.ndarray, np.ndarray, np.ndarray]: GMM component weights,
+            means, and covariance matrices.
         """
-        # Lazy imports: scikit-learn and KDEpy are extras-bound dependencies
-        # (SCOPE.md decision 7). The core import graph must never reach them,
-        # so they load only when this method is actually called. Slice 2b
-        # moves this whole surface behind the [weighted] extra.
-        from sklearn import mixture
+        # Lazy import: the whole gmm_vars surface lives behind the [weighted]
+        # extra (SCOPE.md decision 7); the core import graph never reaches
+        # scikit-learn or KDEpy.
+        from jaxbo.weights import fit_gmm
 
-        from jaxbo._weights import fit_kernel_density
-
-        bounds = kwargs["bounds"]
-        lb = bounds["lb"]
-        ub = bounds["ub"]
-        rng_key = kwargs["rng_key"]
-        dim = lb.shape[0]
-
-        # Sample data uniformly over the full input space
-        onp.random.seed(rng_key[0])
-        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
-        X = lb + (ub - lb) * sampler.random(N_samples)
-        y = self.predict(X, **kwargs)[0]
-
-        # Sample inputs according to the prior distribution
-        rng_key = split(rng_key)[0]
-        onp.random.seed(rng_key[0])
-        sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
-        X_samples = lb + (ub - lb) * sampler.random(N_samples)
-        y_samples = self.predict(X_samples, **kwargs)[0]
-
-        # Estimate output densities from both prior and uniform samples
-        p_x = self.input_prior.pdf(X)
-        p_x_samples = self.input_prior.pdf(X_samples)
-        p_y = fit_kernel_density(y_samples, y, weights=p_x_samples)
-
-        # Importance weighting based on p(x)/p(y)
-        weights = p_x / p_y
-        weights /= np.sum(weights)  # Normalize to a valid probability distribution
-
-        # Resample data points using computed weights
-        indices = np.arange(N_samples)
-        resample_idx = onp.random.choice(indices, N_samples, p=weights.flatten())
-        X_train = (X[resample_idx] - lb) / (ub - lb)  # Scale to [0, 1]^D
-
-        # Fit GMM to resampled inputs
-        clf = mixture.GaussianMixture(n_components=num_comp, covariance_type="full")
-        clf.fit(X_train)
-
-        return clf.weights_, clf.means_, clf.covariances_
+        return fit_gmm(self, num_comp, N_samples, **kwargs)
 
     @partial(jit, static_argnums=(0,))
     def acquisition(self, x: np.ndarray, **kwargs: Any) -> float:
@@ -266,8 +212,12 @@ class GPmodel(ABC):
             return acquisitions.LCB(mean, std, kappa)
 
         def lw_lcb_wrapped():
+            # Lazy import: gmm_vars flows live behind the [weighted] extra
+            # (SCOPE.md decision 7) and raise its install hint when missing.
+            from jaxbo.weights import compute_w_gmm
+
             kappa = kwargs["kappa"]
-            weights = utils.compute_w_gmm(x, **kwargs)
+            weights = compute_w_gmm(x, **kwargs)
             return acquisitions.LW_LCB(mean, std, weights, kappa)
 
         def ei_wrapped():
@@ -282,7 +232,10 @@ class GPmodel(ABC):
             return self.draw_posterior_sample(x, **kwargs)
 
         def lw_us_wrapped():
-            weights = utils.compute_w_gmm(x, **kwargs)
+            # Lazy import: see lw_lcb_wrapped.
+            from jaxbo.weights import compute_w_gmm
+
+            weights = compute_w_gmm(x, **kwargs)
             return acquisitions.LW_US(std, weights)
 
         def clsf_wrapped():
@@ -293,11 +246,14 @@ class GPmodel(ABC):
             return acquisitions.CLSF(denorm_mean, denorm_std, kappa)
 
         def lw_clsf_wrapped():
+            # Lazy import: see lw_lcb_wrapped.
+            from jaxbo.weights import compute_w_gmm
+
             kappa = kwargs["kappa"]
             norm_const = kwargs["norm_const"]
             denorm_mean = mean * norm_const["sigma_y"] + norm_const["mu_y"]
             denorm_std = std * norm_const["sigma_y"]
-            weights = utils.compute_w_gmm(x, **kwargs)
+            weights = compute_w_gmm(x, **kwargs)
             return acquisitions.LW_CLSF(denorm_mean, denorm_std, weights, kappa)
 
         def imse_wrapped():

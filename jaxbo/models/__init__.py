@@ -17,19 +17,18 @@
 
 The core exposes exactly two classes eagerly: :class:`jaxbo.gp.GPmodel` and
 :class:`jaxbo.gp.GP` (SCOPE.md section 3). The multifidelity, manifold,
-gradient, and multiple-output research models remain importable from this
-namespace for backward compatibility, but they load lazily on first access so
-the core import graph never pays for their dependencies. Slice 2b moves them
-into optional-extra subpackages.
+gradient, and multiple-output research models moved to the
+:mod:`jaxbo.multifidelity` extra; they remain importable from this namespace
+for backward compatibility, resolved lazily on first access so the core
+import graph never pays for them.
 """
 
 from typing import List
 
 from jaxbo.gp import GP, GPmodel
 
-# Lazily resolved research models: attribute name to submodule. These are
-# staged for the extras split (SCOPE.md sections 3 and 7, slice 2b); nothing
-# in the core may import them eagerly.
+# Lazily resolved research models: attribute name to its jaxbo.multifidelity
+# home (SCOPE.md sections 3 and 7). Nothing in the core imports them eagerly.
 _LAZY_MODELS = {
     "MultipleIndependentOutputsGP": "multiple_independent_output_gp_model",
     "ManifoldGP": "manifold_gp_model",
@@ -58,7 +57,7 @@ def __getattr__(name: str):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
     import importlib
 
-    cls = getattr(importlib.import_module(f"jaxbo.models.{module_name}"), name)
+    cls = getattr(importlib.import_module(f"jaxbo.multifidelity.{module_name}"), name)
     globals()[name] = cls  # cache so __getattr__ runs once per name
     return cls
 

@@ -25,6 +25,8 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 
+# The core installs with exactly these 4 dependencies (SCOPE.md section 3);
+# everything else lives behind the optional extras below.
 dependencies = [
   "numpy",
   # scipy.stats.qmc (the pyDOE replacement) first shipped in scipy 1.7.0
@@ -33,12 +35,27 @@ dependencies = [
   # 0.11 is unproven here. SCOPE.md: this ceiling moves only on a green CI run.
   "jax>=0.6,<0.11",
   "jaxlib>=0.6,<0.11",
-  "scikit-learn",
-  "KDEpy",
-  "numpyro"
 ]
 
 [project.optional-dependencies]
+# jaxbo.mcmc: NUTS-based GP models
+mcmc = [
+  "numpyro",
+]
+# jaxbo.multifidelity: no third-party deps beyond the core today (the neural
+# feature maps use jax's bundled stax); the extra exists as a stable name.
+multifidelity = []
+# jaxbo.weights: the GMM/KDE weighted-sampling machinery
+weighted = [
+  "scikit-learn",
+  "KDEpy",
+]
+# Union of the three extras above; keep in sync by hand.
+all = [
+  "numpyro",
+  "scikit-learn",
+  "KDEpy",
+]
 bench = [
   "pytest",
   "pytest-benchmark",
@@ -50,8 +67,14 @@ examples = [
 
 [dependency-groups]
 # Installed by a default uv sync; CI runs pytest from the frozen lock.
+# The extras' packages are listed here too (keep in sync with
+# [project.optional-dependencies]) so the test environment can exercise the
+# extras and their compat shims without a separate --all-extras install.
 dev = [
   "pytest",
+  "numpyro",
+  "scikit-learn",
+  "KDEpy",
 ]
 
 [project.urls]
