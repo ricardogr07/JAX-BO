@@ -18,6 +18,10 @@ see the [acknowledgment](#acknowledgment) below.
 
 ```bash
 pip install jaxbo
+
+# The quickstart below needs 0.2.0 (score_candidates, extras). Until it is
+# on PyPI, install from the repo:
+# pip install "jaxbo @ git+https://github.com/ricardogr07/JAX-BO"
 ```
 
 The core installs with exactly 4 dependencies: `jax`, `jaxlib`, `numpy`,
