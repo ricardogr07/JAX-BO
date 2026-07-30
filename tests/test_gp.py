@@ -311,6 +311,31 @@ def test_ei_limits_as_uncertainty_vanishes():
     assert float(jnp.abs(worse)) < 1e-6
     assert float(better) == pytest.approx(1.0, abs=1e-6)
 
+    # Exactly std = 0 hits the explicit exact-knowledge branch: no division
+    # by zero, value is exactly max(best - mean, 0) on both sides and at best.
+    assert float(-acquisitions.EI(jnp.array([1.0]), jnp.array([0.0]), 0.0)) == 0.0
+    assert float(-acquisitions.EI(jnp.array([-1.0]), jnp.array([0.0]), 0.0)) == 1.0
+    assert float(-acquisitions.EI(jnp.array([0.0]), jnp.array([0.0]), 0.0)) == 0.0
+
+
+def test_eic_deterministic_constraint_is_not_nan():
+    """A zero-variance constraint gives feasibility exactly 1 or 0, not NaN.
+
+    The objective row (mean 0.5, std 1.0, best 0.0) is shared, so a surely
+    feasible deterministic constraint (mean 1, std 0) must reproduce the
+    unconstrained EI, and a surely infeasible one (mean -1, std 0) must
+    zero it out; 0/0 NaN from the constraint row would poison both.
+    """
+    ei = acquisitions.EI(jnp.array([0.5]), jnp.array([1.0]), 0.0)
+    feasible = acquisitions.EIC(
+        jnp.array([[0.5], [1.0]]), jnp.array([[1.0], [0.0]]), 0.0
+    )
+    infeasible = acquisitions.EIC(
+        jnp.array([[0.5], [-1.0]]), jnp.array([[1.0], [0.0]]), 0.0
+    )
+    assert float(feasible) == pytest.approx(float(ei), abs=1e-12)
+    assert float(infeasible) == 0.0
+
 
 def test_gp_1d_ei_acquisition_explores_promising_gap(gp_1d):
     """Model-level EI is a valid improvement and steers into the data gap.

@@ -9,6 +9,23 @@ from jax.scipy.stats import norm
 # see e.g. Jones, Schonlau, Welch (1998), "Efficient Global Optimization of
 # Expensive Black-Box Functions", eq. (15).
 
+_STD_EPS = 1e-12
+
+
+def _ei_closed_form(delta: np.ndarray, std: np.ndarray) -> np.ndarray:
+    """Textbook EI, delta * Phi(Z) + std * phi(Z), with Z = delta / std.
+
+    std <= _STD_EPS takes the exact-knowledge limit max(delta, 0) explicitly;
+    the divisor is also clamped so the unselected where branch never produces
+    NaN under jit (the JAX where-gradient gotcha).
+    """
+    Z = delta / np.maximum(std, _STD_EPS)
+    return np.where(
+        std > _STD_EPS,
+        delta * norm.cdf(Z) + std * norm.pdf(Z),
+        np.maximum(delta, 0.0),
+    )
+
 
 @jit
 def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
@@ -16,8 +33,8 @@ def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     Computes the Expected Improvement (EI) acquisition function.
 
     Uses the closed form delta * Phi(Z) + std * phi(Z) with delta = best - mean
-    and Z = delta / std. The divisor is clamped so that at std = 0 the value
-    collapses to the exact-knowledge limit max(best - mean, 0).
+    and Z = delta / std; std <= 1e-12 collapses to the exact-knowledge limit
+    max(best - mean, 0).
 
     Parameters:
     mean (np.ndarray): Predictive mean of the objective function at the point of interest.
@@ -28,10 +45,7 @@ def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative expected improvement (for minimization).
     """
 
-    delta = best - mean
-    Z = delta / np.maximum(std, 1e-12)
-    EI = delta * norm.cdf(Z) + std * norm.pdf(Z)
-    return -EI[0]
+    return -_ei_closed_form(best - mean, std)[0]
 
 
 @jit
@@ -47,10 +61,12 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     Returns:
     float: Negative constrained expected improvement.
     """
-    delta = best - mean[0, :]
-    Z = delta / np.maximum(std[0, :], 1e-12)
-    EI = delta * norm.cdf(Z) + std[0, :] * norm.pdf(Z)
-    constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
+    EI = _ei_closed_form(best - mean[0, :], std[0, :])
+    # Clamped divisor: a deterministic constraint (std = 0) yields feasibility
+    # exactly 1 (mean > 0) or 0 (mean < 0) instead of NaN from 0/0.
+    constraints = np.prod(
+        norm.cdf(mean[1:, :] / np.maximum(std[1:, :], _STD_EPS)), axis=0
+    )
     return -EI[0] * constraints[0]
 
 
