@@ -79,6 +79,12 @@ dev = [
   # local tox envs stay plain pytest on purpose.
   "pytest-cov",
 ]
+# The Docker quickstart image only (not installed by a default uv sync, not
+# published in the wheel): JupyterLab serving the examples/ notebooks. Lives
+# here so the image installs it frozen from uv.lock like everything else.
+docker = [
+  "jupyterlab",
+]
 
 [project.urls]
 homepage = "https://github.com/ricardogr07/JAX-BO"

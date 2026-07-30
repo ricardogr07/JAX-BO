@@ -58,3 +58,33 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           skip-existing: true
+
+  # Docker quickstart image (issue #39): jaxbo[all] + JupyterLab + examples/,
+  # installed frozen from the committed uv.lock. The image mirrors the
+  # release, so it publishes only for a real release trigger (v* tag or
+  # release event, never a branch workflow_dispatch, which must not be able
+  # to overwrite :latest) and only after the PyPI publish succeeded (a
+  # failed PyPI upload must not leave a public container claiming that
+  # version).
+  docker-publish:
+    runs-on: ubuntu-latest
+    needs: [verify-ci, build-and-publish]
+    if: github.ref_type == 'tag' || github.event_name == 'release'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build image
+        # The job-level guard means the ref is always the release tag here,
+        # so the version tag derives from it directly.
+        run: docker build -t ghcr.io/ricardogr07/jaxbo:latest -t "ghcr.io/ricardogr07/jaxbo:${GITHUB_REF_NAME#v}" .
+
+      - name: Push image
+        run: docker push --all-tags ghcr.io/ricardogr07/jaxbo
