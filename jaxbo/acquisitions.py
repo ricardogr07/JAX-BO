@@ -4,14 +4,20 @@ from jax.scipy.stats import norm
 
 # Caution: all functions below are designed for single point evaluation; use
 # score_candidates (or vmap directly) to score a batch of candidates.
-# See derivation in:
-# https://people.orie.cornell.edu/pfrazier/Presentations/2011.11.INFORMS.Tutorial.pdf
+# EI/EIC use the textbook closed form for minimization,
+#     EI = delta * Phi(Z) + std * phi(Z),  delta = best - mean,  Z = delta / std,
+# see e.g. Jones, Schonlau, Welch (1998), "Efficient Global Optimization of
+# Expensive Black-Box Functions", eq. (15).
 
 
 @jit
 def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     """
     Computes the Expected Improvement (EI) acquisition function.
+
+    Uses the closed form delta * Phi(Z) + std * phi(Z) with delta = best - mean
+    and Z = delta / std. The divisor is clamped so that at std = 0 the value
+    collapses to the exact-knowledge limit max(best - mean, 0).
 
     Parameters:
     mean (np.ndarray): Predictive mean of the objective function at the point of interest.
@@ -22,10 +28,9 @@ def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative expected improvement (for minimization).
     """
 
-    delta = -(mean - best)
-    deltap = np.clip(delta, 0.0)
-    Z = delta / std
-    EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std * norm.pdf(Z)
+    delta = best - mean
+    Z = delta / np.maximum(std, 1e-12)
+    EI = delta * norm.cdf(Z) + std * norm.pdf(Z)
     return -EI[0]
 
 
@@ -42,10 +47,9 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     Returns:
     float: Negative constrained expected improvement.
     """
-    delta = -(mean[0, :] - best)
-    deltap = np.clip(delta, 0.0)
-    Z = delta / std[0, :]
-    EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std[0, :] * norm.pdf(Z)
+    delta = best - mean[0, :]
+    Z = delta / np.maximum(std[0, :], 1e-12)
+    EI = delta * norm.cdf(Z) + std[0, :] * norm.pdf(Z)
     constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
     return -EI[0] * constraints[0]
 
