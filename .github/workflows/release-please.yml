@@ -21,6 +21,6 @@ jobs:
       github.event.workflow_run.head_sha == github.sha
     steps:
       - name: Release Please
+        # Manifest mode: version policy lives in release-please-config.json
+        # (bump-minor-pre-major keeps pre-1.0 breaking changes on 0.x).
         uses: googleapis/release-please-action@v4
-        with:
-          release-type: python
