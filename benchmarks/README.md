@@ -24,6 +24,14 @@ must show before/after numbers from this suite on the same machine, same
 env, same seeds. If the delta is inside the per-bench noise band documented
 in the results file, the claim does not go in the PR description.
 
+Two protocol requirements, learned the hard way (see the 2026-08-01
+baseline's protocol section): **check the machine is quiet before
+recording** (background load inflated medians 2 to 10x in the discarded
+runs; clean suite wall time is about 30 seconds), and **record
+before/after deltas as paired runs in one session**, because
+cross-session absolutes on this hardware carry a 27 to 86 percent
+machine-state noise band.
+
 ### Enforcement, honestly
 
 - **Review-enforced today.** AGENTS.md carries the rule ("Optimization PRs
@@ -39,21 +47,13 @@ in the results file, the claim does not go in the PR description.
 
 ## How to run
 
-The current (unrefactored) code needs an old jax: it still uses
-`jnp.clip(..., a_min=...)`, removed in jax 0.10, and it imports the module
-`pyDOE`, while the installed distribution (pydoe 1.3.0) only exposes the
-lowercase module `pydoe`.
+Since v0.2.0 the package runs on current jax with no pins and no shims
+(the pre-refactor code needed `jax<0.10` and a `pyDOE.py` module shim;
+those instructions live in git history with that code).
 
 ```
-uv venv .venv --python 3.12
-uv pip install --python .venv/Scripts/python.exe -e ".[bench]" "jax[cpu]<0.10"
-```
-
-Then write a one-file shim `pyDOE.py` into `.venv/Lib/site-packages/`:
-
-```python
-from pydoe import *
-from pydoe import lhs
+uv venv .venv
+uv pip install --python .venv/Scripts/python.exe -e ".[bench]"
 ```
 
 Run the suite:
@@ -89,25 +89,31 @@ compile-time measure. The benchmarked path is synchronized with
 `jax.block_until_ready` (or a host `float()` on the consumer path, which
 forces the same sync).
 
-## Baseline (2026-07-28, amended after adversarial review)
+## Baseline (2026-08-01, v0.2.0): the Phase 3 comparison base
 
-Machine: 11th Gen Intel Core i7-1185G7 @ 3.00GHz, 8 threads, Windows 10 Pro
-build 19045, CPU-only jax. Env: Python 3.12.6, jax 0.9.2, jaxlib 0.9.2,
-numpy 2.5.1, scipy 1.18.0. Full detail, per-bench noise bands, and IQRs:
-`results/2026-07-28-baseline.md`.
+Recorded on tag `v0.2.0` on a verified-quiet machine (11th Gen Intel Core
+i7-1185G7, 8 threads, Windows 10 Pro build 19045, CPU-only jax 0.10.2,
+Python 3.11.14). Full detail, per-run medians and IQRs, noise bands, and
+the machine-state protocol: `results/2026-08-01-v0.2.0-baseline.md`. The
+3a/3b/3c delta tables gate against that file. The pre-refactor record
+(`results/2026-07-28-baseline.md`) is history, not a comparison base.
 
-| Bench | Median | First-call latency |
+Baseline = median of four clean run medians:
+
+| Bench | Baseline | First-call latency |
 |---|---|---|
-| train warm instance, n=32 | 88.1 ms | 0.72 to 0.76 s |
-| train warm instance, n=128 | 179.9 ms | 0.60 to 0.68 s |
-| train warm instance, n=512 | 2437 ms | 2.70 to 3.08 s |
-| train fresh instance, n=128 | 654.0 ms | every round is a first call |
-| predict, 256 points batched | 1.07 ms | 0.28 to 0.38 s |
-| EI consumer path, 256 candidates | 137.0 ms (0.535 ms per candidate) | 0.39 to 0.48 s |
-| EI fused acquisition, 256 candidates | 76.0 ms (0.297 ms per candidate) | 0.34 to 0.41 s |
+| train warm instance, n=32 | 53.7 ms | 0.34 to 0.59 s |
+| train warm instance, n=128 | 137.8 ms | 0.34 to 0.64 s |
+| train warm instance, n=512 | 1808 ms | 1.61 to 2.53 s |
+| train fresh instance, n=128 | 516.3 ms | every round is a first call |
+| predict, 256 points batched | 0.99 ms | 0.18 to 0.32 s |
+| EI consumer path, 256 candidates | 122.0 ms (0.476 ms per candidate) | 0.27 to 0.36 s |
+| EI fused acquisition, 256 candidates | 71.5 ms (0.279 ms per candidate) | 0.21 to 0.28 s |
+| EI score_candidates, 256 batched | 1.61 ms (0.006 ms per candidate) | 0.30 to 0.50 s |
 
-Two numbers worth naming: the consumer EI path costs 1.8x the fused variant
-(two dispatches plus a host sync per candidate instead of one fused graph),
-and a fresh GP instance pays about 474 ms of instance-keyed recompilation
-per train at n=128 (654 ms fresh vs 180 ms warm, in-session). The latter is
-the number issue #30 gates on.
+Two numbers worth naming: a fresh GP instance still pays instance-keyed
+recompilation per train at n=128 (paired gap 260 to 538 ms across machine
+states, median about 350 ms, fresh/warm ratio 2.9 to 5.4x; the issue #30
+gate), and `score_candidates` scores 256 candidates about 76x cheaper than
+the per-candidate consumer loop (the issue #28 win, confirmed in the
+released package).
