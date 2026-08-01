@@ -21,12 +21,15 @@ path stays covered by ``test_compat``.
 
 import jax
 import jax.numpy as jnp
+import numpy as onp
 import pytest
 from jax import random, vmap
 from jax.scipy.stats import norm
+from scipy.stats import qmc
 
 from jaxbo import acquisitions, initializers
 from jaxbo.gp import GP
+from jaxbo.optimizers import minimize_lbfgs_grad
 from jaxbo.priors import uniform_prior
 from jaxbo.utils import normalize
 
@@ -424,3 +427,120 @@ def test_gp_4d_predict_generalizes_to_held_out(gp_4d):
     # Observed relative RMSE ~1e-4 across seeds (float64); 0.05 keeps a
     # huge margin while a mean-only predictor would score ~1.0.
     assert float(rel_rmse) < 0.05
+
+
+def _serial_next_point(gp, num_restarts, **kwargs):
+    """The pre-batched-start serial multi-start loop, kept as the parity
+    reference: LHS-sample num_restarts starts with the same seeding as
+    ``compute_next_point_lbfgs``, polish every one with bounded L-BFGS-B,
+    return the best polished point and its acquisition value.
+    """
+
+    def objective(x):
+        value, grads = gp.acq_value_and_grad(x, **kwargs)
+        return onp.array(value), onp.array(grads)
+
+    lb, ub = kwargs["bounds"]["lb"], kwargs["bounds"]["ub"]
+    rng_key = kwargs["rng_key"]
+    onp.random.seed(rng_key[0])
+    sampler = qmc.LatinHypercube(d=lb.shape[0], seed=int(rng_key[0]))
+    inits = lb + (ub - lb) * sampler.random(num_restarts)
+    dom_bounds = tuple(map(tuple, jnp.vstack((lb, ub)).T))
+    solutions, values = [], []
+    for i in range(num_restarts):
+        pos, val = minimize_lbfgs_grad(objective, inits[i, :], bnds=dom_bounds)
+        solutions.append(pos)
+        values.append(val)
+    loc = jnp.vstack(solutions)
+    acq = jnp.vstack(values)
+    idx_best = jnp.argmin(acq)
+    return loc[idx_best : idx_best + 1, :]
+
+
+def _next_point_kwargs(fitted, seed=7):
+    return {
+        "params": fitted["opt_params"],
+        "batch": fitted["batch"],
+        "bounds": fitted["bounds"],
+        "rng_key": random.PRNGKey(seed),
+    }
+
+
+@pytest.mark.parametrize("problem", ["gp_1d", "gp_4d"])
+def test_next_point_lbfgs_batched_start_shapes_and_bounds(problem, request):
+    """Batched-start EI path: valid shapes, in-bounds results, and the
+    documented restart mapping (k = min(10, max(2, 10 // 5)) = 2 polishes
+    for the default budget of 10)."""
+    fitted = request.getfixturevalue(problem)
+    kwargs = _next_point_kwargs(fitted)
+    lb, ub = fitted["bounds"]["lb"], fitted["bounds"]["ub"]
+    dim = lb.shape[0]
+
+    x_new, acq, loc = fitted["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+
+    assert x_new.shape == (1, dim)
+    assert acq.shape == (2, 1)
+    assert loc.shape == (2, dim)
+    # A polish may return NaN where the EI gradient NaNs at a
+    # variance-clipped point; at least one must survive and be selected.
+    assert int(jnp.sum(jnp.isfinite(acq))) >= 1
+    assert bool(jnp.all(jnp.isfinite(x_new)))
+    assert bool(jnp.all(loc >= lb)) and bool(jnp.all(loc <= ub))
+    assert bool(jnp.all(x_new >= lb)) and bool(jnp.all(x_new <= ub))
+    # x_new is the best finite polished start, per the return contract.
+    assert bool(jnp.all(x_new[0] == loc[int(jnp.nanargmin(acq))]))
+
+
+@pytest.mark.parametrize("problem", ["gp_1d", "gp_4d"])
+def test_next_point_lbfgs_batched_start_matches_or_beats_serial(problem, request):
+    """The batched-start point is at least as good as the old serial path's.
+
+    Equal-or-better acquisition value within a small tolerance is the bar,
+    not identical points: both paths polish with the same bounded L-BFGS-B
+    but from different (equally seeded) start sets.
+    """
+    fitted = request.getfixturevalue(problem)
+    kwargs = _next_point_kwargs(fitted)
+    gp = fitted["gp"]
+
+    x_new, _, _ = gp.compute_next_point_lbfgs(num_restarts=10, **kwargs)
+    x_serial = _serial_next_point(gp, 10, **kwargs)
+
+    # ravel: acquisition returns a 0-d value here (the fixtures carry 1-D
+    # targets, so predict's mean is 1-D and the [0] convention consumes it).
+    acq_new = float(jnp.ravel(gp.acquisition(x_new[0], **kwargs))[0])
+    acq_serial = float(jnp.ravel(gp.acquisition(x_serial[0], **kwargs))[0])
+    assert acq_new <= acq_serial + 1e-6
+
+
+def test_next_point_lbfgs_is_deterministic(gp_1d):
+    """Same rng_key, same result: seeding survives the batched-start path."""
+    kwargs = _next_point_kwargs(gp_1d)
+    x_a, acq_a, loc_a = gp_1d["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+    x_b, acq_b, loc_b = gp_1d["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+    onp.testing.assert_array_equal(onp.asarray(x_a), onp.asarray(x_b))
+    onp.testing.assert_array_equal(onp.asarray(acq_a), onp.asarray(acq_b))
+    onp.testing.assert_array_equal(onp.asarray(loc_a), onp.asarray(loc_b))
+
+
+def test_next_point_lbfgs_serial_fallback_keeps_restart_count(gp_1d):
+    """A criterion without a batched scorer (IMSE) keeps the serial contract:
+    one polish per restart, so acq and loc have num_restarts rows."""
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+    gp_imse = make_gp(lb, ub, criterion="IMSE")
+    kwargs = _next_point_kwargs(gp_1d)
+
+    x_new, acq, loc = gp_imse.compute_next_point_lbfgs(num_restarts=2, **kwargs)
+
+    assert x_new.shape == (1, 1)
+    assert acq.shape == (2, 1)
+    assert loc.shape == (2, 1)
+    assert bool(jnp.all(loc >= lb)) and bool(jnp.all(loc <= ub))
+
+
+def test_batched_start_scorer_capability_map(gp_1d):
+    """EI maps to a batched scorer; per-candidate-state criteria map to None."""
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+    assert gp_1d["gp"]._batched_start_scorer(batch=gp_1d["batch"]) is not None
+    for criterion in ["TS", "IMSE", "IMSE_L"]:
+        assert make_gp(lb, ub, criterion=criterion)._batched_start_scorer() is None
