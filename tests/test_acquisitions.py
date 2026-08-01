@@ -39,6 +39,25 @@ def test_eic_deterministic_constraint():
     assert jnp.isclose(-val, ei)
 
 
+def test_lcbc_deterministic_constraint_no_nan():
+    # 0/0 at a zero-variance constraint row used to return NaN (issue 62).
+    # mean == 0 at std == 0 takes the Phi step limit 0.5.
+    mean = jnp.array([[1.0], [0.0]])
+    std = jnp.array([[0.5], [0.0]])
+    val = acquisitions.LCBC(mean, std, kappa=2.0, threshold=3.0)
+    lcb = 1.0 - 3.0 - 2.0 * 0.5
+    assert jnp.isclose(val, lcb * 0.5)
+
+
+def test_lw_lcbc_deterministic_constraint_no_nan():
+    # Deterministic infeasible constraint zeroes the score exactly, no NaN.
+    mean = jnp.array([[1.0], [-1.0]])
+    std = jnp.array([[0.5], [0.0]])
+    weights = jnp.array([1.0])
+    val = acquisitions.LW_LCBC(mean, std, weights, kappa=2.0, threshold=3.0)
+    assert val == 0.0
+
+
 def test_lcb_basic():
     mean = jnp.array([1.0])
     std = jnp.array([0.5])
