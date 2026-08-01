@@ -21,7 +21,7 @@ from scipy.stats import qmc
 import jaxbo.acquisitions as acquisitions
 import jaxbo.kernels as kernels
 from jaxbo import initializers
-from jaxbo.optimizers import minimize_lbfgs_grad
+from jaxbo.optimizers import minimize_bfgs_jax, minimize_lbfgs_grad
 
 
 SUPPORTED_KERNELS: Dict[str, Callable] = {
@@ -528,8 +528,9 @@ class GPmodel(ABC):
 class GP(GPmodel):
     """Exact Gaussian process regression model for Bayesian optimization.
 
-    Hyperparameters are optimized by multi-start L-BFGS-B on the negative
-    log-marginal likelihood.
+    Hyperparameters are optimized by multi-start BFGS on the negative
+    log-marginal likelihood, run fully on device as one jitted, vmapped
+    computation across restarts.
 
     Warning:
         Normalization contract (SCOPE.md section 2), the two halves are
@@ -617,16 +618,29 @@ class GP(GPmodel):
         num_restarts: int = 10,
     ) -> np.ndarray:
         """
-        Optimize GP hyperparameters using multi-start L-BFGS-B.
+        Optimize GP hyperparameters using multi-start BFGS, fully on device.
+
+        Each restart draws a random initialization and minimizes the negative
+        log-marginal likelihood with unbounded BFGS. All restarts run inside
+        a single jitted, vmapped computation (:meth:`_train_multistart`), so
+        no host-device round trip happens per optimizer step. The best
+        restart is selected with a NaN-aware argmin, so a restart that fails
+        (for example a Cholesky breakdown at a degenerate initialization)
+        cannot poison the result.
 
         Args:
             batch: Dictionary with 'X' and 'y'. See the warning below for the
                 normalization this data must already carry.
-            rng_key: PRNGKey for reproducibility.
+            rng_key: PRNGKey for reproducibility. The same key always yields
+                the same initializations and therefore the same result.
             num_restarts: Number of random initializations.
 
         Returns:
-            Best hyperparameters found (array).
+            Best hyperparameters found (array of shape (dim + 2,)).
+
+        Raises:
+            RuntimeError: If no restart produced a finite likelihood value,
+                which would otherwise silently return meaningless parameters.
 
         Warning:
             ``batch`` is consumed exactly as given: it must be ALREADY
@@ -637,25 +651,55 @@ class GP(GPmodel):
             normalizes them internally against ``bounds``. Training on raw
             inputs produces silently wrong results: no error is raised.
         """
-
-        def objective(params: np.ndarray) -> Tuple[onp.ndarray, onp.ndarray]:
-            value, grads = self.likelihood_value_and_grad(params, batch)
-            return onp.array(value), onp.array(grads)
-
         dim = batch["X"].shape[1]
         rng_keys = random.split(rng_key, num_restarts)
+        inits = np.stack([initializers.random_init_GP(k, dim) for k in rng_keys])
+        params, values = self._train_multistart(inits, batch)
+        idx_best = np.nanargmin(values)
+        if not bool(np.isfinite(values[idx_best])):
+            raise RuntimeError(
+                "GP.train: every restart produced a non-finite likelihood; "
+                "check the scaling and normalization of the training data."
+            )
+        return params[idx_best, :]
 
-        params_list, values = [], []
-        for i in range(num_restarts):
-            init = initializers.random_init_GP(rng_keys[i], dim)
-            p, val = minimize_lbfgs_grad(objective, init)
-            params_list.append(p)
-            values.append(val)
+    @partial(jit, static_argnums=(0,))
+    def _train_multistart(
+        self, inits: np.ndarray, batch: Dict[str, np.ndarray]
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Run one unbounded BFGS likelihood minimization per initialization.
 
-        params_stack = np.vstack(params_list)
-        values_stack = np.vstack(values)
-        idx_best = np.nanargmin(values_stack)
-        return params_stack[idx_best, :]
+        The whole multi-start optimization is one jitted computation: the
+        solver is vmapped over the stacked initializations, so every optimizer
+        step of every restart runs on device. The scipy path this replaces
+        paid one host-device round trip per objective evaluation. The train
+        problem is unbounded and tiny (dim + 2 parameters), exactly the
+        regime :func:`jaxbo.optimizers.minimize_bfgs_jax` covers; its
+        ``gtol`` default matches the 1e-8 the scipy path used, and its
+        line search only accepts finite decreasing steps, so the returned
+        value of every restart is the true likelihood at its returned
+        parameters.
+
+        Args:
+            inits: Stacked initializations, shape (num_restarts, dim + 2).
+            batch: Normalized training data with 'X' and 'y'.
+
+        Returns:
+            Tuple (params, values): per-restart optimized hyperparameters of
+            shape (num_restarts, dim + 2) and final NLML values of shape
+            (num_restarts,). A failed restart reports a non-finite value
+            and is skipped by the caller's selection.
+        """
+
+        def value_and_grad(p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            value, grads = self.likelihood_value_and_grad(p, batch)
+            # likelihood values carry shape (1, 1); the solver wants a scalar.
+            return np.sum(value), grads
+
+        def run(x0: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+            return minimize_bfgs_jax(value_and_grad, x0)
+
+        return vmap(run)(inits)
 
     @partial(jit, static_argnums=(0,))
     def predict(
