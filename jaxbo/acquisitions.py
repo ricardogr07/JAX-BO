@@ -4,14 +4,37 @@ from jax.scipy.stats import norm
 
 # Caution: all functions below are designed for single point evaluation; use
 # score_candidates (or vmap directly) to score a batch of candidates.
-# See derivation in:
-# https://people.orie.cornell.edu/pfrazier/Presentations/2011.11.INFORMS.Tutorial.pdf
+# EI/EIC use the textbook closed form for minimization,
+#     EI = delta * Phi(Z) + std * phi(Z),  delta = best - mean,  Z = delta / std,
+# see e.g. Jones, Schonlau, Welch (1998), "Efficient Global Optimization of
+# Expensive Black-Box Functions", eq. (15).
+
+_STD_EPS = 1e-12
+
+
+def _ei_closed_form(delta: np.ndarray, std: np.ndarray) -> np.ndarray:
+    """Textbook EI, delta * Phi(Z) + std * phi(Z), with Z = delta / std.
+
+    std <= _STD_EPS takes the exact-knowledge limit max(delta, 0) explicitly;
+    the divisor is also clamped so the unselected where branch never produces
+    NaN under jit (the JAX where-gradient gotcha).
+    """
+    Z = delta / np.maximum(std, _STD_EPS)
+    return np.where(
+        std > _STD_EPS,
+        delta * norm.cdf(Z) + std * norm.pdf(Z),
+        np.maximum(delta, 0.0),
+    )
 
 
 @jit
 def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     """
     Computes the Expected Improvement (EI) acquisition function.
+
+    Uses the closed form delta * Phi(Z) + std * phi(Z) with delta = best - mean
+    and Z = delta / std; std <= 1e-12 collapses to the exact-knowledge limit
+    max(best - mean, 0).
 
     Parameters:
     mean (np.ndarray): Predictive mean of the objective function at the point of interest.
@@ -22,11 +45,7 @@ def EI(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative expected improvement (for minimization).
     """
 
-    delta = -(mean - best)
-    deltap = np.clip(delta, 0.0)
-    Z = delta / std
-    EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std * norm.pdf(Z)
-    return -EI[0]
+    return -_ei_closed_form(best - mean, std)[0]
 
 
 @jit
@@ -42,11 +61,19 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     Returns:
     float: Negative constrained expected improvement.
     """
-    delta = -(mean[0, :] - best)
-    deltap = np.clip(delta, 0.0)
-    Z = delta / std[0, :]
-    EI = deltap - np.abs(deltap) * norm.cdf(-Z) + std[0, :] * norm.pdf(Z)
-    constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
+    EI = _ei_closed_form(best - mean[0, :], std[0, :])
+    mean_c, std_c = mean[1:, :], std[1:, :]
+    # Any positive std keeps the exact divisor (cdf saturates safely, and an
+    # eps clamp would distort feasibility for valid tiny stds, e.g.
+    # mean = std = 1e-13 is Phi(1), not Phi(mean/eps)). Only std == 0 takes
+    # the step limit: 1 (mean > 0), 0 (mean < 0), 0.5 at the boundary. The
+    # where-guarded divisor keeps the unselected branch NaN-free under jit.
+    feasibility = np.where(
+        std_c > 0.0,
+        norm.cdf(mean_c / np.where(std_c > 0.0, std_c, 1.0)),
+        np.heaviside(mean_c, 0.5),
+    )
+    constraints = np.prod(feasibility, axis=0)
     return -EI[0] * constraints[0]
 
 

@@ -259,17 +259,20 @@ def test_ei_matches_closed_form():
     """EI agrees with the textbook closed form and a hand-computed constant.
 
     jaxbo returns the NEGATIVE expected improvement (minimization), so the
-    improvement itself is the negated return value. The implemented Frazier
-    tutorial form equals the textbook EI, delta * Phi(z) + std * phi(z) with
-    delta = best - mean, whenever mean <= best; for mean > best it returns
-    the std * phi(z) upper bound instead, so that branch is locked by the
-    vanishing-uncertainty limit and monotonicity tests below, not here.
+    improvement itself is the negated return value. The implementation is the
+    textbook closed form, delta * Phi(z) + std * phi(z) with delta = best -
+    mean and z = delta / std, on both sides of mean = best (issue #55).
     """
     # mean == best: improvement reduces to std * phi(0) = 0.5 / sqrt(2*pi).
     val = acquisitions.EI(jnp.array([1.0]), jnp.array([0.5]), 1.0)
     assert float(-val) == pytest.approx(0.19947114020071635, abs=1e-6)
 
-    for mean, std, best in [(0.5, 1.0, 1.0), (-0.3, 0.7, 0.2), (1.0, 0.4, 2.0)]:
+    for mean, std, best in [
+        (0.5, 1.0, 1.0),
+        (-0.3, 0.7, 0.2),
+        (1.0, 0.4, 2.0),
+        (1.5, 0.5, 1.0),  # mean > best: same closed form, no special branch
+    ]:
         delta = best - mean
         z = delta / std
         expected = delta * norm.cdf(z) + std * norm.pdf(z)
@@ -277,19 +280,18 @@ def test_ei_matches_closed_form():
         assert jnp.allclose(got, expected, atol=1e-6)
 
 
-def test_ei_worse_than_best_is_frazier_upper_bound():
-    """Characterization: for mean > best, EI returns std * phi(z), not textbook.
+def test_ei_worse_than_best_matches_closed_form():
+    """For mean > best, EI is the textbook closed form, not an upper bound.
 
     With mean=1, std=1, best=0 (minimization) the textbook expected
-    improvement is delta * Phi(z) + std * phi(z) = -0.15866 + 0.24197 =
-    0.08332, but the implemented Frazier tutorial form drops the negative
-    delta * Phi(z) term and returns the std * phi(z) = 0.24197 upper bound.
-    Locked here so any change to that branch is deliberate; the deviation is
-    tracked in issue #55 (the acquisitions implementation is owned by the
-    2b/2c slices, not this test suite).
+    improvement is delta * Phi(z) + std * phi(z) with delta = z = -1:
+    -1 * 0.15865525393145707 + 0.24197072451914337 = 0.0833154705876863.
+    The pre-fix Frazier tutorial form dropped the negative delta * Phi(z)
+    term and returned the std * phi(z) = 0.24197 upper bound; fixed in
+    issue #55, locked here so any regression is deliberate.
     """
     got = -acquisitions.EI(jnp.array([1.0]), jnp.array([1.0]), 0.0)
-    assert float(got) == pytest.approx(0.24197072451914337, abs=1e-6)
+    assert float(got) == pytest.approx(0.0833154705876863, abs=1e-6)
 
 
 def test_ei_nonnegative_and_monotone_in_mean():
@@ -308,6 +310,31 @@ def test_ei_limits_as_uncertainty_vanishes():
     better = -acquisitions.EI(jnp.array([-1.0]), jnp.array([1e-8]), 0.0)
     assert float(jnp.abs(worse)) < 1e-6
     assert float(better) == pytest.approx(1.0, abs=1e-6)
+
+    # Exactly std = 0 hits the explicit exact-knowledge branch: no division
+    # by zero, value is exactly max(best - mean, 0) on both sides and at best.
+    assert float(-acquisitions.EI(jnp.array([1.0]), jnp.array([0.0]), 0.0)) == 0.0
+    assert float(-acquisitions.EI(jnp.array([-1.0]), jnp.array([0.0]), 0.0)) == 1.0
+    assert float(-acquisitions.EI(jnp.array([0.0]), jnp.array([0.0]), 0.0)) == 0.0
+
+
+def test_eic_deterministic_constraint_is_not_nan():
+    """A zero-variance constraint gives feasibility exactly 1 or 0, not NaN.
+
+    The objective row (mean 0.5, std 1.0, best 0.0) is shared, so a surely
+    feasible deterministic constraint (mean 1, std 0) must reproduce the
+    unconstrained EI, and a surely infeasible one (mean -1, std 0) must
+    zero it out; 0/0 NaN from the constraint row would poison both.
+    """
+    ei = acquisitions.EI(jnp.array([0.5]), jnp.array([1.0]), 0.0)
+    feasible = acquisitions.EIC(
+        jnp.array([[0.5], [1.0]]), jnp.array([[1.0], [0.0]]), 0.0
+    )
+    infeasible = acquisitions.EIC(
+        jnp.array([[0.5], [-1.0]]), jnp.array([[1.0], [0.0]]), 0.0
+    )
+    assert float(feasible) == pytest.approx(float(ei), abs=1e-12)
+    assert float(infeasible) == 0.0
 
 
 def test_gp_1d_ei_acquisition_explores_promising_gap(gp_1d):
