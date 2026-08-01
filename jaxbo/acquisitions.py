@@ -12,6 +12,23 @@ from jax.scipy.stats import norm
 _STD_EPS = 1e-12
 
 
+def _constraint_feasibility(mean_c: np.ndarray, std_c: np.ndarray) -> np.ndarray:
+    """Product over constraint rows of P(constraint >= 0) = Phi(mean/std).
+
+    Any positive std keeps the exact divisor (cdf saturates safely, and an
+    eps clamp would distort feasibility for valid tiny stds, e.g.
+    mean = std = 1e-13 is Phi(1), not Phi(mean/eps)). Only std == 0 takes
+    the step limit: 1 (mean > 0), 0 (mean < 0), 0.5 at the boundary. The
+    where-guarded divisor keeps the unselected branch NaN-free under jit.
+    """
+    feasibility = np.where(
+        std_c > 0.0,
+        norm.cdf(mean_c / np.where(std_c > 0.0, std_c, 1.0)),
+        np.heaviside(mean_c, 0.5),
+    )
+    return np.prod(feasibility, axis=0)
+
+
 def _ei_closed_form(delta: np.ndarray, std: np.ndarray) -> np.ndarray:
     """Textbook EI, delta * Phi(Z) + std * phi(Z), with Z = delta / std.
 
@@ -62,18 +79,7 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative constrained expected improvement.
     """
     EI = _ei_closed_form(best - mean[0, :], std[0, :])
-    mean_c, std_c = mean[1:, :], std[1:, :]
-    # Any positive std keeps the exact divisor (cdf saturates safely, and an
-    # eps clamp would distort feasibility for valid tiny stds, e.g.
-    # mean = std = 1e-13 is Phi(1), not Phi(mean/eps)). Only std == 0 takes
-    # the step limit: 1 (mean > 0), 0 (mean < 0), 0.5 at the boundary. The
-    # where-guarded divisor keeps the unselected branch NaN-free under jit.
-    feasibility = np.where(
-        std_c > 0.0,
-        norm.cdf(mean_c / np.where(std_c > 0.0, std_c, 1.0)),
-        np.heaviside(mean_c, 0.5),
-    )
-    constraints = np.prod(feasibility, axis=0)
+    constraints = _constraint_feasibility(mean[1:, :], std[1:, :])
     return -EI[0] * constraints[0]
 
 
@@ -94,7 +100,7 @@ def LCBC(
     float: Constrained LCB acquisition value.
     """
     lcb = mean[0, :] - threshold - kappa * std[0, :]
-    constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
+    constraints = _constraint_feasibility(mean[1:, :], std[1:, :])
     return lcb[0] * constraints[0]
 
 
@@ -120,7 +126,7 @@ def LW_LCBC(
     float: Weighted constrained LCB acquisition value.
     """
     lcb = mean[0, :] - threshold - kappa * std[0, :] * weights
-    constraints = np.prod(norm.cdf(mean[1:, :] / std[1:, :]), axis=0)
+    constraints = _constraint_feasibility(mean[1:, :], std[1:, :])
     return lcb[0] * constraints[0]
 
 
