@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security report
+    url: https://github.com/ricardogr07/JAX-BO/security/advisories/new
+    about: Report a vulnerability privately. Please do not use the public tracker.
