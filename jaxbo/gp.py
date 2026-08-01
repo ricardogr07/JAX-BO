@@ -430,6 +430,15 @@ class GP(GPmodel):
           against the domain bounds, targets standardized).
         - ``predict`` takes RAW domain points ``X_star`` and normalizes them
           internally against ``bounds``.
+
+    Note:
+        Instances compare equal when built from an equivalent options dict
+        (same kernel, criterion, and ``input_prior`` object). The jitted
+        methods take ``self`` as a static argument, so jax keys its
+        compilation cache on this equality: a second ``GP(...)`` with the
+        same configuration reuses every compilation the first one paid for
+        instead of recompiling per instance. The key is captured at
+        construction; mutating ``options`` afterwards does not rekey.
     """
 
     def __init__(self, options: Dict[str, Any]):
@@ -440,6 +449,26 @@ class GP(GPmodel):
                 with keys such as 'kernel', 'input_prior', and 'criterion'.
         """
         super().__init__(options)
+        # The traced methods read only self.kernel (and, in the acquisition
+        # dispatch, options["criterion"]) from the instance; input_prior is
+        # kept in the key as a guard, compared by object identity. This must
+        # stay in sync with what the jitted methods read from self, or equal
+        # instances with divergent behavior would silently share compiled
+        # code.
+        self._jit_cache_key = (
+            type(self),
+            self.kernel,
+            self.options.get("criterion"),
+            self.input_prior,
+        )
+
+    def __hash__(self) -> int:
+        return hash(self._jit_cache_key)
+
+    def __eq__(self, other: object) -> Any:
+        if not isinstance(other, GP):
+            return NotImplemented
+        return self._jit_cache_key == other._jit_cache_key
 
     @partial(jit, static_argnums=(0,))
     def compute_cholesky(
