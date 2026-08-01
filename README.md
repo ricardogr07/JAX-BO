@@ -1,51 +1,151 @@
-# JAX-BO (Extended): Bayesian Optimization in JAX
+# jaxbo: Bayesian optimization in JAX
 
-This is a modified and extended version of the original [JAX-BO](https://github.com/PredictiveIntelligenceLab/JAX-BO) library for Bayesian optimization, with improved compatibility and enhancements for modern Python and JAX versions.
+[![CI](https://github.com/ricardogr07/JAX-BO/actions/workflows/ci.yml/badge.svg)](https://github.com/ricardogr07/JAX-BO/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/jaxbo)](https://pypi.org/project/jaxbo/)
+[![License](https://img.shields.io/github/license/ricardogr07/JAX-BO)](LICENSE)
 
----
+A maintained, modern-JAX Bayesian optimization library: a small stable core
+(exact GP regression, 5 kernels, the classic acquisition functions plus a
+batched `score_candidates` helper, input priors, L-BFGS training) with
+optional research extras (MCMC inference, multifidelity and manifold GPs,
+weighted sampling) that install on demand and are never paid for otherwise.
 
-## Getting Started
+This is a maintained fork of
+[PredictiveIntelligenceLab/JAX-BO](https://github.com/PredictiveIntelligenceLab/JAX-BO);
+see the [acknowledgment](#acknowledgment) below.
 
-### Installation
-
-You can install the latest version from PyPI:
+## Install
 
 ```bash
 pip install jaxbo
+
+# The quickstart below needs 0.2.0 (score_candidates, extras). Until it is
+# on PyPI, install from the repo:
+# pip install "jaxbo @ git+https://github.com/ricardogr07/JAX-BO"
 ```
 
-Launch the interactive tutorial on Google Colab:  
-[![Open Demo in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ricardogr07/JAX-BO/blob/master/jaxbo_colab.ipynb)
+The core installs with exactly 4 dependencies: `jax`, `jaxlib`, `numpy`,
+`scipy`. Everything else lives behind optional extras:
 
----
+| Install | Adds | Extra dependencies |
+|---|---|---|
+| `pip install jaxbo` | core: `jaxbo.gp`, `jaxbo.kernels`, `jaxbo.acquisitions`, `jaxbo.optimizers`, `jaxbo.priors`, `jaxbo.test_functions` | none |
+| `pip install jaxbo[mcmc]` | `jaxbo.mcmc`: NUTS-based GP models | numpyro |
+| `pip install jaxbo[multifidelity]` | `jaxbo.multifidelity`: multifidelity, manifold, gradient, and multi-output GPs | none |
+| `pip install jaxbo[weighted]` | `jaxbo.weights`: GMM/KDE weighted acquisition machinery | scikit-learn, KDEpy |
+| `pip install jaxbo[all]` | all of the above | union |
 
-## Maintainer and Fork Information
+`import jaxbo` never imports an extra's dependencies; importing an extra
+without them raises an ImportError naming the `pip install jaxbo[extra]`
+fix.
 
-This fork is maintained by Ricardo García Ramírez, as of May 2025.
+## Supported versions
 
-### Summary of Modifications
+The package pins `jax>=0.6,<0.11` (matching jaxlib) and requires Python
+3.10 or newer. CI tests every lane below at the jax floor and the newest
+jax the pin allows:
 
-- Updated for compatibility with Python 3.12
-- Migrated to recent versions of `jax` and `jaxlib`
-- Fixed and tested all demo notebooks and example scripts
-- Added detailed documentation to all public functions and modules
-- Improved error handling and logging output
-- Refactored and expanded optimizer functionality
-- Clarified model design and acquisition strategy logic
+| Python | jax tested | Status |
+|---|---|---|
+| 3.10 | 0.6.0 to 0.6.2 | supported (0.6.2 is the last jax with 3.10 wheels) |
+| 3.11 | 0.6.0 to 0.10.2 | supported |
+| 3.12 | 0.6.0 to 0.10.2 | supported |
+| 3.13 | 0.6.0 to 0.10.2 | tested, advisory until the CI lanes hold a green streak |
+| 3.14 | 0.7.2 to 0.10.2 | tested, advisory until the CI lanes hold a green streak |
 
-> **Note:** This fork is **not affiliated** with the original authors. It is maintained independently to support downstream research applications.
+## Quickstart: 60 seconds to the next point
 
----
+Fit a GP to observations of an objective, then score a batch of candidates
+with expected improvement in one vmapped pass:
 
-## Original Project
+```python
+import jax.numpy as jnp
+import numpy as np
+from jax import random
 
-This project is based on the original [JAX-BO](https://github.com/PredictiveIntelligenceLab/JAX-BO) library developed by the [Predictive Intelligence Lab](https://github.com/PredictiveIntelligenceLab) at the University of Pennsylvania.
+from jaxbo.acquisitions import score_candidates
+from jaxbo.gp import GP
+from jaxbo.priors import uniform_prior
+from jaxbo.utils import normalize
 
----
 
-## Citation (Original Work)
+def f(x):
+    return ((x - 1.5) ** 2).ravel()
 
-If you use this library in your research, please cite the original authors:
+
+# Domain and observations (raw domain)
+lb, ub = jnp.array([-2.0]), jnp.array([3.0])
+bounds = {"lb": lb, "ub": ub}
+X = jnp.linspace(-2.0, 3.0, 8)[:, None]
+y = f(X)
+
+# GP expects an already normalized training batch
+batch, norm_const = normalize(X, y, bounds)
+
+gp = GP({"kernel": "RBF", "input_prior": uniform_prior(lb, ub), "criterion": "EI"})
+params = gp.train(batch, random.PRNGKey(0), num_restarts=5)
+
+# Score 256 raw-domain candidates in one vmapped pass and pick the best
+X_cand = np.linspace(-2.0, 3.0, 256)[:, None]
+scores = score_candidates(
+    gp, X_cand, params=params, batch=batch, bounds=bounds,
+    best=float(np.min(batch["y"])),
+)
+x_next = X_cand[np.argmin(scores)]
+print("next point to evaluate:", x_next)  # close to the true minimum at 1.5
+```
+
+Two contract points worth knowing before you swap in a real objective:
+
+- **Normalization:** `train` consumes `batch["X"]` exactly as given, so
+  pass the already normalized batch (`utils.normalize`). `predict` and
+  `score_candidates` normalize raw-domain inputs internally against
+  `bounds`. Normalized batch in, raw candidates in; mixing these up fails
+  silently.
+- **Scores:** lower is better for every acquisition in
+  `jaxbo.acquisitions` (EI is returned negated), so the next point is
+  `X_cand[np.argmin(scores)]`.
+
+Prefer a notebook? Launch the interactive tutorial on Colab:
+[![Open Demo in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ricardogr07/JAX-BO/blob/main/jaxbo_colab.ipynb)
+
+## Docker
+
+A quickstart image with `jaxbo[all]`, JupyterLab, and the `examples/`
+notebooks is published to GHCR with each release, starting with 0.2.0:
+
+```bash
+docker run -p 8888:8888 ghcr.io/ricardogr07/jaxbo
+```
+
+Then open the printed `http://127.0.0.1:8888/lab?token=...` URL.
+
+## Project documentation
+
+- [CONTRIBUTING.md](CONTRIBUTING.md): dev setup (uv + committed lockfile),
+  tox envs, the CI gate map, PR rules, and the benchmark delta rule
+- [SCOPE.md](SCOPE.md): the 0.2.0 revamp scope, architecture, and locked
+  decisions
+- [benchmarks/](benchmarks/README.md): the performance harness and the "no
+  optimization without a delta" rule
+- [docs/audits/](docs/audits/): reposage audit baseline the revamp is
+  measured against
+- [CHANGELOG.md](CHANGELOG.md): release notes, generated by release-please
+
+## Acknowledgment
+
+This project is a fork of
+[JAX-BO](https://github.com/PredictiveIntelligenceLab/JAX-BO) by the
+[Predictive Intelligence Lab](https://github.com/PredictiveIntelligenceLab)
+at the University of Pennsylvania (Paris Perdikaris, Yibo Yang, Mohamed
+Aziz Bhouri). The core model structure, kernels, and acquisition functions
+originate there; this fork modernizes the library (current jax/python
+support, core/extras packaging, tests, benchmarks, CI) and is maintained
+independently by Ricardo García Ramírez. It is not affiliated with the
+original authors.
+
+If you use this library in your research, please cite the original work
+(see also [CITATION.cff](CITATION.cff)):
 
 ```bibtex
 @software{jaxbo2020github,
@@ -56,12 +156,7 @@ If you use this library in your research, please cite the original authors:
   year = {2020},
 }
 ```
----
 
-## Changelog ##
+## License
 
-All modifications and release notes are documented in the [CHANGELOG](CHANGELOG.md) file.
-
----
-## License ##
-This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
+Apache License 2.0. See [LICENSE](LICENSE).
