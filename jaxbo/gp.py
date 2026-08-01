@@ -675,10 +675,10 @@ class GP(GPmodel):
         paid one host-device round trip per objective evaluation. The train
         problem is unbounded and tiny (dim + 2 parameters), exactly the
         regime :func:`jaxbo.optimizers.minimize_bfgs_jax` covers; its
-        ``gtol`` default matches the 1e-8 the scipy path used, and its
-        line search only accepts finite decreasing steps, so the returned
-        value of every restart is the true likelihood at its returned
-        parameters.
+        dtype-aware gtol and ftol defaults mirror scipy L-BFGS-B's
+        termination model in both float32 and float64, and its line search
+        only accepts finite decreasing steps, so the returned value of
+        every restart is the true likelihood at its returned parameters.
 
         Args:
             inits: Stacked initializations, shape (num_restarts, dim + 2).

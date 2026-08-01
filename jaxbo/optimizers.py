@@ -163,8 +163,9 @@ def minimize_lbfgs_grad(
 def minimize_bfgs_jax(
     value_and_grad: Callable[[jnp.ndarray], Tuple[jnp.ndarray, jnp.ndarray]],
     x0: jnp.ndarray,
-    maxiter: int = 500,
-    gtol: float = 1e-8,
+    maxiter: int = 100,
+    gtol: Optional[float] = None,
+    ftol: Optional[float] = None,
     maxls: int = 30,
     c1: float = 1e-4,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
@@ -197,11 +198,32 @@ def minimize_bfgs_jax(
     x0 : jnp.ndarray
         A 1D array of shape (D,), the initial guess.
 
-    maxiter : int, optional (default=500)
-        Maximum number of BFGS iterations.
+    maxiter : int, optional (default=100)
+        Maximum number of BFGS iterations. BFGS converges superlinearly on
+        the tiny smooth problems this solver targets (GP hyperparameter
+        surfaces of dimension D + 2 finish in under 25 iterations in
+        float64, and the ftol floor ends float32 runs well before 100), so
+        100 is generous headroom whose real job is bounding the cost of a
+        pathological run: under vmap every lane steps until the slowest
+        lane terminates.
 
-    gtol : float, optional (default=1e-8)
+    gtol : float, optional (default=None)
         Terminate when the max-norm of the gradient drops below this value.
+        Defaults to sqrt(eps) of the parameter dtype: about 1.5e-8 in
+        float64 (matching the 1e-8 the scipy L-BFGS-B path used) and about
+        3.5e-4 in float32, where gradient norms cannot reach float64-scale
+        tolerances.
+
+    ftol : float, optional (default=None)
+        Terminate when an accepted step's decrease satisfies
+        (f_k - f_{k+1}) <= ftol * max(|f_k|, |f_{k+1}|, 1), the same
+        criterion scipy's L-BFGS-B applies. Defaults to 1e5 * eps of the
+        parameter dtype (factr semantics): about 2.2e-11 in float64,
+        tighter than scipy's default 2.2e-9, and about 1.2e-2 in float32.
+        This floor is what terminates float32 runs: near the optimum the
+        Armijo threshold `f + c1 * t * slope` rounds to `f`, so zero
+        progress steps keep being accepted and, without this criterion,
+        the loop would spin until maxiter.
 
     maxls : int, optional (default=30)
         Maximum number of step halvings per line search; the search fails,
@@ -219,6 +241,12 @@ def minimize_bfgs_jax(
     f_opt : jnp.ndarray
         The scalar objective value at `x_opt`.
     """
+    eps = float(jnp.finfo(jnp.asarray(x0).dtype).eps)
+    if gtol is None:
+        gtol = eps**0.5
+    if ftol is None:
+        ftol = 1e5 * eps
+
     f0, g0 = value_and_grad(x0)
     eye = jnp.eye(x0.shape[0], dtype=x0.dtype)
 
@@ -272,10 +300,15 @@ def minimize_bfgs_jax(
         updated = w @ (inv_hessian * scale) @ w.T + rho * jnp.outer(s, s)
         inv_hessian = jnp.where(ok_upd, updated, inv_hessian)
 
+        f_prev = f
         x = jnp.where(accepted, x + s, x)
         f = jnp.where(accepted, f_new, f)
         g = jnp.where(accepted, g_new, g)
-        done = (~accepted) | (jnp.max(jnp.abs(g)) < gtol)
+        # Three exits: line search out of acceptable steps, relative
+        # function decrease below the ftol floor (the criterion that ends
+        # float32 runs), or gradient below gtol.
+        floor = ftol * jnp.maximum(jnp.maximum(jnp.abs(f_prev), jnp.abs(f)), 1.0)
+        done = (~accepted) | (f_prev - f <= floor) | (jnp.max(jnp.abs(g)) < gtol)
         return (x, f, g, inv_hessian, scaled | ok_upd, k + 1, done)
 
     state = (x0, f0, g0, eye, jnp.asarray(False), 0, ~jnp.isfinite(f0))

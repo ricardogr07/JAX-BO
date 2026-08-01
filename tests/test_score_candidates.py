@@ -91,8 +91,14 @@ def test_acq_fn_and_kwargs_forwarding(gp1d):
         serial.append(float(acquisitions.LCB(mu, std, kappa=3.0)[0]))
 
     assert scores.shape == (N_CAND,)
+    # rtol 1e-3: LCB scores cross zero, so the relative error here is
+    # denominator sensitive, and the batched vs serial float32 reduction
+    # reorder measures ~3e-4 relative at the fixture's trained params
+    # (which move whenever the train optimizer changes; the previous 1e-4
+    # was calibrated against the scipy-trained endpoint). A real
+    # forwarding bug (kappa lost, mu/std swapped) is O(1).
     onp.testing.assert_allclose(
-        onp.asarray(scores), onp.asarray(serial), rtol=1e-4, atol=1e-6
+        onp.asarray(scores), onp.asarray(serial), rtol=1e-3, atol=1e-6
     )
 
 
