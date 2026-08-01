@@ -26,10 +26,11 @@ in the results file, the claim does not go in the PR description.
 
 Two protocol requirements, learned the hard way (see the 2026-08-01
 baseline's protocol section): **check the machine is quiet before
-recording** (a loaded or thermally worked machine inflates medians 2 to
-10x; clean suite wall time is about 30 seconds), and **record before/after
-deltas as paired runs in one session**, because cross-session absolutes on
-this hardware carry a 27 to 86 percent thermal noise band.
+recording** (background load inflated medians 2 to 10x in the discarded
+runs; clean suite wall time is about 30 seconds), and **record
+before/after deltas as paired runs in one session**, because
+cross-session absolutes on this hardware carry a 27 to 86 percent
+machine-state noise band.
 
 ### Enforcement, honestly
 
@@ -111,7 +112,7 @@ Baseline = median of four clean run medians:
 | EI score_candidates, 256 batched | 1.61 ms (0.006 ms per candidate) | 0.30 to 0.50 s |
 
 Two numbers worth naming: a fresh GP instance still pays instance-keyed
-recompilation per train at n=128 (paired gap 260 to 538 ms across thermal
+recompilation per train at n=128 (paired gap 260 to 538 ms across machine
 states, median about 350 ms, fresh/warm ratio 2.9 to 5.4x; the issue #30
 gate), and `score_candidates` scores 256 candidates about 76x cheaper than
 the per-candidate consumer loop (the issue #28 win, confirmed in the
