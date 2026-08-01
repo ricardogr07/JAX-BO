@@ -62,11 +62,18 @@ def EIC(mean: np.ndarray, std: np.ndarray, best: float) -> float:
     float: Negative constrained expected improvement.
     """
     EI = _ei_closed_form(best - mean[0, :], std[0, :])
-    # Clamped divisor: a deterministic constraint (std = 0) yields feasibility
-    # exactly 1 (mean > 0) or 0 (mean < 0) instead of NaN from 0/0.
-    constraints = np.prod(
-        norm.cdf(mean[1:, :] / np.maximum(std[1:, :], _STD_EPS)), axis=0
+    mean_c, std_c = mean[1:, :], std[1:, :]
+    # Any positive std keeps the exact divisor (cdf saturates safely, and an
+    # eps clamp would distort feasibility for valid tiny stds, e.g.
+    # mean = std = 1e-13 is Phi(1), not Phi(mean/eps)). Only std == 0 takes
+    # the step limit: 1 (mean > 0), 0 (mean < 0), 0.5 at the boundary. The
+    # where-guarded divisor keeps the unselected branch NaN-free under jit.
+    feasibility = np.where(
+        std_c > 0.0,
+        norm.cdf(mean_c / np.where(std_c > 0.0, std_c, 1.0)),
+        np.heaviside(mean_c, 0.5),
     )
+    constraints = np.prod(feasibility, axis=0)
     return -EI[0] * constraints[0]
 
 
