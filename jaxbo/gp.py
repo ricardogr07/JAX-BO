@@ -430,6 +430,18 @@ class GP(GPmodel):
           against the domain bounds, targets standardized).
         - ``predict`` takes RAW domain points ``X_star`` and normalizes them
           internally against ``bounds``.
+
+    Note:
+        Instances compare equal when their live configuration matches: same
+        concrete class, kernel function, ``criterion``, and ``input_prior``
+        object (priors compare by identity and are never hashed, so
+        unhashable priors keep working). The jitted methods take ``self``
+        as a static argument, so jax keys its compilation cache on this
+        equality: a second ``GP(...)`` with the same configuration reuses
+        every compilation the first one paid for instead of recompiling per
+        instance. The key is read live at every call, so rebinding
+        ``options["criterion"]`` after construction moves the instance to
+        its own fresh cache line instead of hitting a stale one.
     """
 
     def __init__(self, options: Dict[str, Any]):
@@ -440,6 +452,31 @@ class GP(GPmodel):
                 with keys such as 'kernel', 'input_prior', and 'criterion'.
         """
         super().__init__(options)
+
+    def _jit_cache_key(self) -> Tuple[Any, ...]:
+        # Everything the traced methods read from the instance, resolved
+        # live at call time so post-construction rebinding rekeys instead
+        # of hitting a stale compiled cache line. This must stay in sync
+        # with what the jitted methods read from self, or equal instances
+        # with divergent behavior would silently share compiled code. The
+        # prior participates by identity and is never hashed: it enters no
+        # trace, and id() keeps unhashable priors usable. Cache entries
+        # hold their GP (and so its prior) alive, so a live id cannot be
+        # recycled into a false match.
+        return (
+            type(self),
+            self.kernel,
+            self.options.get("criterion"),
+            None if self.input_prior is None else id(self.input_prior),
+        )
+
+    def __hash__(self) -> int:
+        return hash(self._jit_cache_key())
+
+    def __eq__(self, other: object) -> Any:
+        if not isinstance(other, GP):
+            return NotImplemented
+        return self._jit_cache_key() == other._jit_cache_key()
 
     @partial(jit, static_argnums=(0,))
     def compute_cholesky(
