@@ -45,6 +45,56 @@ def test_config_differences_break_equality():
     assert base != "not a GP"
 
 
+class _UnhashablePrior:
+    """Value-equality prior stand-in: eq without hash, like a mutable dataclass."""
+
+    def __init__(self, tag):
+        self.tag = tag
+
+    def __eq__(self, other):
+        return isinstance(other, _UnhashablePrior) and self.tag == other.tag
+
+    __hash__ = None
+
+
+def test_unhashable_prior_keeps_identity_semantics():
+    prior = _UnhashablePrior("p")
+    gp = GP({**CONFIG, "input_prior": prior})
+    hash(gp)  # the prior must never be hashed itself
+    assert gp == GP({**CONFIG, "input_prior": prior})
+    # Equal by value but a different object: identity semantics, distinct
+    # cache line.
+    assert gp != GP({**CONFIG, "input_prior": _UnhashablePrior("p")})
+    batch, params = _demo_problem()
+    gp.likelihood(params, batch)  # jit static-arg hashing must accept it
+
+
+def test_criterion_mutation_rekeys(monkeypatch):
+    calls = {"n": 0}
+
+    def counting_rbf(x1, x2, params):
+        calls["n"] += 1
+        return kernels.RBF(x1, x2, params)
+
+    monkeypatch.setitem(gp_module.SUPPORTED_KERNELS, "RBF", counting_rbf)
+
+    batch, params = _demo_problem()
+    warm = GP(dict(CONFIG))
+    warm.likelihood(params, batch)
+
+    # Mutating the criterion after construction must move the instance off
+    # the warmed cache line: the key is read live, so the mutated instance
+    # retraces instead of silently reusing code traced for the old config.
+    mutated = GP(dict(CONFIG))
+    assert mutated == warm
+    mutated.options["criterion"] = "LCB"
+    assert mutated != warm
+
+    calls["n"] = 0
+    mutated.likelihood(params, batch)
+    assert calls["n"] > 0
+
+
 def test_second_instance_pays_zero_retraces(monkeypatch):
     calls = {"n": 0}
 
