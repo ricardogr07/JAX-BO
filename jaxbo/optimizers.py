@@ -182,9 +182,13 @@ def minimize_bfgs_jax(
     The line search only ever accepts steps whose value and gradient are
     finite and satisfy at least the Armijo decrease condition, so the
     returned pair is always consistent: `f_opt` is the objective at
-    `x_opt`, values are monotonically nonincreasing, and an objective that
-    is non-finite at `x0` returns `x0` with its non-finite value for the
-    caller to discard. This is why
+    `x_opt` and values are monotonically nonincreasing. The one deliberate
+    exception is a run that cannot start: if either the value or the
+    gradient is non-finite at `x0`, the run returns `x0` with a non-finite
+    score for the caller to discard, even when the value alone was finite
+    (a non-finite gradient leaves the line search unable to accept any
+    step, so such a lane has optimized nothing and must not compete for
+    selection on the strength of its starting value). This is why
     `jax.scipy.optimize.minimize(method="BFGS")` is not used here: on a
     line-search failure its final state takes the unvalidated trial step,
     so it can report an `x` inconsistent with its reported `fun` (observed
@@ -285,6 +289,15 @@ def minimize_bfgs_jax(
         ftol = (1e7 if eps < 1e-10 else 1e5) * eps
 
     f0, g0 = value_and_grad(x0)
+    # A run that cannot start is reported with a non-finite score so the
+    # caller discards the lane. The gradient half matters as much as the
+    # value half: with a finite f0 and a non-finite g0 the search direction
+    # is non-finite, every trial fails `usable`, and the run would otherwise
+    # return x0 with its finite f0, which `GP.train`'s nanargmin would then
+    # accept as a converged restart (it is the true objective at x0, but
+    # nothing was optimized).
+    bad_start = ~jnp.isfinite(f0) | ~jnp.all(jnp.isfinite(g0))
+    f0 = jnp.where(bad_start, jnp.nan, f0)
     eye = jnp.eye(x0.shape[0], dtype=x0.dtype)
     # Doubling budget of the bracket phase. Small on purpose: bracketing
     # exists to correct the step SCALE (a few octaves), not to traverse
@@ -541,6 +554,6 @@ def minimize_bfgs_jax(
         done = (~accepted) | (f_prev - f <= floor) | (jnp.max(jnp.abs(g)) < gtol)
         return (x, f, g, inv_hessian, scaled | ok_upd, k + 1, done)
 
-    state = (x0, f0, g0, eye, jnp.asarray(False), 0, ~jnp.isfinite(f0))
+    state = (x0, f0, g0, eye, jnp.asarray(False), 0, bad_start)
     x_opt, f_opt, *_ = lax.while_loop(cond, body, state)
     return x_opt, f_opt

@@ -42,3 +42,18 @@ def test_minimize_bfgs_jax_non_finite_start_is_reported():
     # to discard, never as a fabricated finite value.
     x_opt, f_opt = minimize_bfgs_jax(_jax_quad_vg, jnp.array([jnp.nan]))
     assert jnp.isnan(f_opt)
+
+
+def test_minimize_bfgs_jax_non_finite_start_gradient_is_reported():
+    """A finite value with a non-finite gradient at x0 is a failed run.
+
+    The line search cannot accept any step from a non-finite direction, so
+    the run optimizes nothing. Reporting its finite starting value would
+    let GP.train's nanargmin select the lane as though it had converged.
+    """
+
+    def finite_value_nan_grad(x):
+        return jnp.sum(x**2), jnp.full_like(x, jnp.nan)
+
+    _, f_opt = minimize_bfgs_jax(finite_value_nan_grad, jnp.array([1.0, 2.0]))
+    assert not bool(jnp.isfinite(f_opt))
