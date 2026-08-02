@@ -82,11 +82,30 @@ def test_selected_nlml_matches_scipy_on_gap_fixture():
 
     Mirrors the tests/test_gp.py ``gp_1d`` fixture (data-gap problem,
     PRNGKey(0), 10 restarts, float64): the multi-start's SELECTED optimum
-    must reach an NLML within tolerance of the scipy L-BFGS-B path's on
-    the same seeds. The CI failure mode this pins down is every restart
-    collapsing into a pathological basin on some platform, which shows up
-    here as a selected NLML far above scipy's (basin gaps measure 1.7 to
-    40 nats; the passing margin measures under 0.01).
+    must land in the same basin as the scipy L-BFGS-B path's on the same
+    seeds. The CI failure mode this pins down is every restart collapsing
+    into the degenerate tiny-lengthscale optimum on some platform (the
+    tests/test_gp.py module docstring records it at NLML +12.8 against
+    -28; on this fixture such restarts land near +3.0), which shows up
+    here as a selected NLML tens of nats above scipy's.
+
+    The tolerance is deliberately basin-scale, not value-parity scale.
+    Both paths terminate somewhere on the zero-noise ridge of this
+    noiseless likelihood, where the surface is nearly flat and the last
+    nat of NLML only records how far each optimizer rode the ridge before
+    its own stopping rule fired. Measured over seeds 0 to 19 at 10
+    restarts, the selected-value difference spans -0.51 to +1.02 nats in
+    both directions (12 of 20 seeds differ by more than 0.05), and it does
+    not shrink usefully with more restarts (+0.71 max at 20, +0.27 at 30).
+    Deeper is also not better here: the seed whose NLML beat scipy by the
+    largest margin (-28.73 against -28.22) is the one seed of the 20 whose
+    trained model FAILS the gap-uncertainty contract that
+    ``test_gp_1d_uncertainty_grows_in_data_gap`` asserts, because riding
+    the ridge to zero noise is exactly the improper optimum
+    :func:`jaxbo.optimizers.minimize_bfgs_jax` refuses to chase. A
+    sub-nat parity assert would therefore be both platform-flaky and
+    pointed the wrong way; 1.2 nats still catches the 31 nat collapse
+    this test exists for.
     """
     jax.config.update("jax_enable_x64", True)
     try:
@@ -102,7 +121,7 @@ def test_selected_nlml_matches_scipy_on_gap_fixture():
         nlml_new = float(jnp.sum(gp.likelihood(new_params, batch)))
         nlml_old = float(jnp.sum(gp.likelihood(old_params, batch)))
         assert bool(jnp.all(jnp.isfinite(new_params)))
-        assert nlml_new <= nlml_old + 0.05
+        assert nlml_new <= nlml_old + 1.2
     finally:
         jax.config.update("jax_enable_x64", False)
 
