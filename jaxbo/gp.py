@@ -443,6 +443,14 @@ class GPmodel(ABC):
                 **acq_kwargs,
             )
             k = min(num_restarts, max(2, num_restarts // 5))
+            # Never rank a non-finite score as best. On a near-singular model
+            # the criterion NaNs at variance-clipped candidates, and those are
+            # exactly the starts a polish cannot recover from; the serial path
+            # diluted that risk across num_restarts blind starts, k of them
+            # cannot. Sorting them last costs nothing when every score is
+            # finite, and when none is, the order is arbitrary either way and
+            # the all-failed guard below catches it.
+            cand_scores = np.where(np.isfinite(cand_scores), cand_scores, np.inf)
             starts = candidates[np.argsort(cand_scores)[:k]]
 
         # Format bounds for SciPy optimizer
@@ -462,8 +470,21 @@ class GPmodel(ABC):
         # Select the best acquisition score. nanargmin, like train(): a
         # polish can return NaN where the acquisition gradient NaNs at a
         # variance-clipped point, and argmin would select that row.
-        idx_best = np.nanargmin(acq)
-        x_new = loc[idx_best : idx_best + 1, :]  # Shape: (1, D)
+        #
+        # EVERY polish failing is reachable, and more so on the batched path,
+        # which polishes k starts instead of num_restarts (k = 2 at the
+        # default budget, so two NaNs is all it takes). nanargmin has no
+        # answer there: it returns an out-of-range index, and the caller gets
+        # a silently EMPTY (0, D) point rather than an error. Fall back to
+        # the best start instead, which is finite and in bounds by
+        # construction: the top-ranked scored candidate on the batched path,
+        # the first LHS draw on the serial one. A start beats both a NaN and
+        # an empty array, and a BO loop keeps running.
+        if bool(np.any(np.isfinite(acq))):
+            idx_best = np.nanargmin(acq)
+            x_new = loc[idx_best : idx_best + 1, :]  # Shape: (1, D)
+        else:
+            x_new = starts[0:1, :]  # Shape: (1, D)
 
         return x_new, acq, loc
 
