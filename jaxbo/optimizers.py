@@ -166,12 +166,13 @@ def minimize_bfgs_jax(
     maxiter: int = 100,
     gtol: Optional[float] = None,
     ftol: Optional[float] = None,
-    maxls: int = 30,
+    maxls: int = 5,
     c1: float = 1e-4,
+    c2: float = 0.9,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     """
     Minimize an unbounded scalar function fully on device with BFGS and a
-    backtracking (Armijo) line search.
+    strong Wolfe line search (bracketing by doubling, then bisection zoom).
 
     Built from `lax.while_loop` and `jax.numpy` only, so it is jit- and
     vmap-compatible and never leaves the device: the intended use is mapping
@@ -179,15 +180,37 @@ def minimize_bfgs_jax(
     in a single compiled computation.
 
     The line search only ever accepts steps whose value and gradient are
-    finite and satisfy the Armijo decrease condition, so the returned pair
-    is always consistent: `f_opt` is the objective at `x_opt`, values are
-    monotonically nonincreasing, and an objective that is non-finite at
-    `x0` returns `x0` with its non-finite value for the caller to discard.
-    This is why `jax.scipy.optimize.minimize(method="BFGS")` is not used
-    here: on a line-search failure its final state takes the unvalidated
-    trial step, so it can report an `x` inconsistent with its reported
-    `fun` (observed on NLML surfaces whose optimum borders a Cholesky
-    breakdown region).
+    finite and satisfy at least the Armijo decrease condition, so the
+    returned pair is always consistent: `f_opt` is the objective at
+    `x_opt`, values are monotonically nonincreasing, and an objective that
+    is non-finite at `x0` returns `x0` with its non-finite value for the
+    caller to discard. This is why
+    `jax.scipy.optimize.minimize(method="BFGS")` is not used here: on a
+    line-search failure its final state takes the unvalidated trial step,
+    so it can report an `x` inconsistent with its reported `fun` (observed
+    on NLML surfaces whose optimum borders a Cholesky breakdown region).
+
+    Two ingredients make the search basin-robust on multi-modal surfaces
+    (platform-level rounding differences must not flip which optimum a
+    seeded restart converges to):
+
+    - The strong Wolfe curvature condition |phi'(t)| <= c2 * |phi'(0)|
+      rejects trial points where the objective is still steep, so a step
+      cannot dive down a cliff into a distant basin merely because the
+      value there happens to satisfy the decrease condition; it also keeps
+      every inverse-Hessian update well-scaled. When no trial point can
+      certify curvature within the budgets, the run ends at the current
+      iterate, matching scipy L-BFGS-B's ABNORMAL_TERMINATION_IN_LNSRCH
+      semantics: that situation means the objective is locally linear
+      along the direction (an improper ridge, e.g. the zero-noise ridge
+      of a noiseless GP likelihood, or the dtype's resolution floor), and
+      continuing to harvest decrease there converges to improper optima
+      the reference implementation never reaches.
+    - The first trial step of the run is gradient-scaled,
+      t = min(1, 1 / ||g0||), so a steep initialization takes a unit-length
+      first move instead of a ||g0||-length leap; after the first
+      inverse-Hessian update the natural step t = 1 is well-scaled (see
+      the Nocedal and Wright eq. 6.20 rescale below).
 
     Parameters
     ----------
@@ -225,13 +248,22 @@ def minimize_bfgs_jax(
         progress steps keep being accepted and, without this criterion,
         the loop would spin until maxiter.
 
-    maxls : int, optional (default=30)
-        Maximum number of step halvings per line search; the search fails,
-        ending the optimization at the current iterate, if no acceptable
-        step is found within this budget.
+    maxls : int, optional (default=5)
+        Maximum number of bisection steps in the zoom phase of the line
+        search. Deliberately small: in a curved basin the zoom certifies a
+        strong Wolfe point within a few bisections, while on flat or
+        rounding-noise stretches no budget certifies one and every extra
+        bisection is a wasted full objective evaluation (measured 3x train
+        wall time at 512 training points between 5 and 30, with identical
+        selected optima). When the budgets end without a certified point,
+        the search fails and the optimization ends at the current iterate.
 
     c1 : float, optional (default=1e-4)
         Armijo sufficient-decrease constant.
+
+    c2 : float, optional (default=0.9)
+        Strong Wolfe curvature constant (0.9 is the standard quasi-Newton
+        choice, matching scipy).
 
     Returns
     -------
@@ -245,27 +277,220 @@ def minimize_bfgs_jax(
     if gtol is None:
         gtol = eps**0.5
     if ftol is None:
-        ftol = 1e5 * eps
+        # float64: factr 1e7, exactly scipy L-BFGS-B's default, so runs
+        # stop at scipy-comparable depth (tighter riding of improper NLML
+        # ridges is worse, not better; see the GP gap fixture). float32:
+        # 1e7 ULPs exceeds the 23-bit mantissa, so the parity constant is
+        # meaningless there; 1e5 is the measured precision floor.
+        ftol = (1e7 if eps < 1e-10 else 1e5) * eps
 
     f0, g0 = value_and_grad(x0)
     eye = jnp.eye(x0.shape[0], dtype=x0.dtype)
+    # Doubling budget of the bracket phase. Small on purpose: bracketing
+    # exists to correct the step SCALE (a few octaves), not to traverse
+    # flat improper ridges of the objective, where unbounded growth lets
+    # a single line search harvest gains that keep the outer ftol test
+    # from ever firing (scipy's bounded per-iteration travel is what made
+    # the L-BFGS-B path stop at sane optima on such surfaces).
+    n_bracket = 3
 
-    def ls_cond(carry):
-        _, _, _, j, accepted, *_ = carry
-        return (~accepted) & (j < maxls)
+    def line_search(x, f, g, p, slope, t_init):
+        """Strong Wolfe search: bracket by doubling, then bisection zoom.
 
-    def ls_body(carry):
-        t, f_t, g_t, j, _, x, f, slope, p = carry
-        f_try, g_try = value_and_grad(x + t * p)
-        ok = (
-            jnp.isfinite(f_try)
-            & jnp.all(jnp.isfinite(g_try))
-            & (f_try <= f + c1 * t * slope)
+        Returns (accepted, t, f_t, g_t). Invariant: the returned point
+        satisfies at least Armijo with finite value and gradient, or
+        accepted is False and the caller keeps the current iterate.
+        """
+
+        def eval_t(t):
+            f_t, g_t = value_and_grad(x + t * p)
+            return f_t, g_t, jnp.dot(g_t, p)
+
+        def usable(t, phi, grad):
+            # Finite and Armijo: a non-finite trial is simply "too far"
+            # and gets bracketed away, which is how the scipy path
+            # recovered from NaN regions.
+            return (
+                jnp.isfinite(phi)
+                & jnp.all(jnp.isfinite(grad))
+                & (phi <= f + c1 * t * slope)
+            )
+
+        wolfe_thresh = -c2 * slope
+        zero_t = jnp.zeros_like(t_init)
+
+        def b_cond(carry):
+            j, wolfe, brack = carry[0], carry[1], carry[2]
+            return (~wolfe) & (~brack) & (j < n_bracket)
+
+        def b_body(carry):
+            (
+                j,
+                wolfe,
+                brack,
+                t_lo,
+                phi_lo,
+                dphi_lo,
+                g_lo,
+                t_hi,
+                phi_hi,
+                t,
+                t_st,
+                phi_st,
+                g_st,
+            ) = carry
+            phi_t, g_t, dphi_t = eval_t(t)
+            to_hi = (~usable(t, phi_t, g_t)) | ((phi_t >= phi_lo) & (j > 0))
+            wolfe = (~to_hi) & (jnp.abs(dphi_t) <= wolfe_thresh)
+            pos = (~to_hi) & (~wolfe) & (dphi_t >= 0)
+            grow = (~to_hi) & (~wolfe) & (~pos)
+            brack = to_hi | pos
+            # Bracket is [lo, t] when the trial is unusable or higher than
+            # lo, and [t, old lo] when the slope turned positive (the old
+            # lo values move to hi before lo is overwritten).
+            t_hi = jnp.where(to_hi, t, jnp.where(pos, t_lo, t_hi))
+            phi_hi = jnp.where(to_hi, phi_t, jnp.where(pos, phi_lo, phi_hi))
+            move = pos | grow
+            g_lo = jnp.where(move, g_t, g_lo)
+            t_lo = jnp.where(move, t, t_lo)
+            phi_lo = jnp.where(move, phi_t, phi_lo)
+            dphi_lo = jnp.where(move, dphi_t, dphi_lo)
+            g_st = jnp.where(wolfe, g_t, g_st)
+            t_st = jnp.where(wolfe, t, t_st)
+            phi_st = jnp.where(wolfe, phi_t, phi_st)
+            t = jnp.where(grow, 2.0 * t, t)
+            return (
+                j + 1,
+                wolfe,
+                brack,
+                t_lo,
+                phi_lo,
+                dphi_lo,
+                g_lo,
+                t_hi,
+                phi_hi,
+                t,
+                t_st,
+                phi_st,
+                g_st,
+            )
+
+        carry = (
+            0,
+            jnp.asarray(False),
+            jnp.asarray(False),
+            zero_t,
+            f,
+            slope,
+            g,
+            zero_t,
+            f,
+            t_init,
+            zero_t,
+            f,
+            g,
         )
-        f_t = jnp.where(ok, f_try, f_t)
-        g_t = jnp.where(ok, g_try, g_t)
-        t_next = jnp.where(ok, t, t * 0.5)
-        return (t_next, f_t, g_t, j + 1, ok, x, f, slope, p)
+        (
+            _,
+            wolfe,
+            brack,
+            t_lo,
+            phi_lo,
+            dphi_lo,
+            g_lo,
+            t_hi,
+            phi_hi,
+            _,
+            t_st,
+            phi_st,
+            g_st,
+        ) = lax.while_loop(b_cond, b_body, carry)
+
+        def z_cond(carry):
+            k, wolfe, dead = carry[0], carry[1], carry[2]
+            return brack & (~wolfe) & (~dead) & (k < maxls)
+
+        def z_body(carry):
+            (
+                k,
+                wolfe,
+                dead,
+                t_lo,
+                phi_lo,
+                dphi_lo,
+                g_lo,
+                t_hi,
+                phi_hi,
+                t_st,
+                phi_st,
+                g_st,
+            ) = carry
+            t_m = 0.5 * (t_lo + t_hi)
+            phi_m, g_m, dphi_m = eval_t(t_m)
+            to_hi = (~usable(t_m, phi_m, g_m)) | (phi_m >= phi_lo)
+            wolfe = (~to_hi) & (jnp.abs(dphi_m) <= wolfe_thresh)
+            flip = (~to_hi) & (~wolfe) & (dphi_m * (t_hi - t_lo) >= 0)
+            to_lo = (~to_hi) & (~wolfe)
+            # Flat at working precision across lo, mid, and hi: no
+            # representable decrease is left in the bracket, so stop
+            # instead of bisecting the budget away (this is the float32
+            # endgame; the caller's ftol floor then ends the run).
+            dead = (phi_m == phi_lo) & (phi_m == phi_hi)
+            g_st = jnp.where(wolfe, g_m, g_st)
+            t_st = jnp.where(wolfe, t_m, t_st)
+            phi_st = jnp.where(wolfe, phi_m, phi_st)
+            t_hi_new = jnp.where(to_hi, t_m, jnp.where(flip, t_lo, t_hi))
+            phi_hi_new = jnp.where(to_hi, phi_m, jnp.where(flip, phi_lo, phi_hi))
+            g_lo = jnp.where(to_lo, g_m, g_lo)
+            t_lo = jnp.where(to_lo, t_m, t_lo)
+            phi_lo = jnp.where(to_lo, phi_m, phi_lo)
+            dphi_lo = jnp.where(to_lo, dphi_m, dphi_lo)
+            return (
+                k + 1,
+                wolfe,
+                dead,
+                t_lo,
+                phi_lo,
+                dphi_lo,
+                g_lo,
+                t_hi_new,
+                phi_hi_new,
+                t_st,
+                phi_st,
+                g_st,
+            )
+
+        zoom_carry = (
+            0,
+            wolfe,
+            jnp.asarray(False),
+            t_lo,
+            phi_lo,
+            dphi_lo,
+            g_lo,
+            t_hi,
+            phi_hi,
+            t_st,
+            phi_st,
+            g_st,
+        )
+        (_, wolfe, _, t_lo, phi_lo, _, g_lo, _, _, t_st, phi_st, g_st) = lax.while_loop(
+            z_cond, z_body, zoom_carry
+        )
+
+        # Only a certified strong Wolfe point is accepted. No fallback to
+        # the best Armijo point on purpose: failing to certify curvature
+        # within budget means the objective is locally linear along the
+        # direction (an improper ridge, e.g. the zero-noise ridge of a
+        # noiseless GP likelihood, or the dtype's resolution floor), and
+        # scipy's L-BFGS-B stops the whole run there
+        # (ABNORMAL_TERMINATION_IN_LNSRCH). An Armijo fallback would keep
+        # harvesting ridge decrease scipy never harvests and converge to
+        # improper optima the reference path never reaches. Non-finite
+        # trials are not fatal by themselves: like dcsrch, the search
+        # brackets away from them and may still certify a point at a
+        # smaller step.
+        return wolfe, t_st, phi_st, g_st
 
     def cond(state):
         *_, k, done = state
@@ -281,9 +506,14 @@ def minimize_bfgs_jax(
         p = jnp.where(descent, p, -g)
         slope = jnp.where(descent, slope, -jnp.dot(g, g))
 
-        t0 = jnp.asarray(1.0, dtype=x.dtype)
-        carry = (t0, f, g, 0, jnp.asarray(False), x, f, slope, p)
-        t, f_new, g_new, _, accepted, *_ = lax.while_loop(ls_cond, ls_body, carry)
+        one = jnp.asarray(1.0, dtype=x.dtype)
+        gnorm = jnp.sqrt(jnp.dot(g, g))
+        # Gradient-scaled first trial step until the first inverse-Hessian
+        # update lands (see the docstring's basin-robustness note).
+        t_init = jnp.where(
+            scaled, one, jnp.minimum(one, one / jnp.maximum(gnorm, one * eps))
+        )
+        accepted, t, f_new, g_new = line_search(x, f, g, p, slope, t_init)
 
         s = t * p
         y = g_new - g

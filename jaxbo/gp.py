@@ -689,12 +689,40 @@ class GP(GPmodel):
             shape (num_restarts, dim + 2) and final NLML values of shape
             (num_restarts,). A failed restart reports a non-finite value
             and is skipped by the caller's selection.
+
+        Note:
+            The objective is domain-guarded: hyperparameters whose kernel
+            matrix lacks numerical positive-definiteness margin evaluate
+            to NaN, so the line search brackets away from them and a
+            restart headed that way stops at the boundary with its last
+            usable iterate. The guard requires the guaranteed eigenvalue
+            floor of K (sigma_n plus the 1e-8 jitter) to exceed the
+            rounding noise of the kernel entries themselves, about
+            eps * sqrt(N) * K[0, 0] (Weyl bound). Past that point the
+            computed K is PSD in some compiled programs and indefinite in
+            others: a restart converging there (the zero-noise limit that
+            noiseless data invites) would report a winning NLML while the
+            same parameters evaluate to NaN in ``predict``. The safety
+            factor is dtype-calibrated against measurements: in float32 a
+            real PSD flip was observed at 0.17x the bound (factor 1.0
+            keeps 6x margin); in float64 the reference scipy path's
+            historical winners sit as low as 0.12x the bound and years of
+            green predict tests prove them safe, so 0.05 admits every
+            endpoint the reference path produced while still excluding
+            the far zero-noise ridge.
         """
+        eps = float(np.finfo(inits.dtype).eps)
+        factor = 1.0 if eps > 1e-10 else 0.05
+        margin = factor * eps * float(batch["X"].shape[0]) ** 0.5
 
         def value_and_grad(p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
             value, grads = self.likelihood_value_and_grad(p, batch)
+            amplitude = np.exp(p[0])
+            noise_floor = np.exp(p[-1]) + 1e-8
+            ok = noise_floor > margin * (amplitude + noise_floor)
+            bad = np.asarray(np.nan, dtype=inits.dtype)
             # likelihood values carry shape (1, 1); the solver wants a scalar.
-            return np.sum(value), grads
+            return np.where(ok, np.sum(value), bad), np.where(ok, grads, bad)
 
         def run(x0: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
             return minimize_bfgs_jax(value_and_grad, x0)

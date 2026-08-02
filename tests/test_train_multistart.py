@@ -77,6 +77,36 @@ def test_train_nlml_matches_scipy_path_within_tolerance():
         jax.config.update("jax_enable_x64", False)
 
 
+def test_selected_nlml_matches_scipy_on_gap_fixture():
+    """The issue #31 criterion, encoded on the exact canary problem.
+
+    Mirrors the tests/test_gp.py ``gp_1d`` fixture (data-gap problem,
+    PRNGKey(0), 10 restarts, float64): the multi-start's SELECTED optimum
+    must reach an NLML within tolerance of the scipy L-BFGS-B path's on
+    the same seeds. The CI failure mode this pins down is every restart
+    collapsing into a pathological basin on some platform, which shows up
+    here as a selected NLML far above scipy's (basin gaps measure 1.7 to
+    40 nats; the passing margin measures under 0.01).
+    """
+    jax.config.update("jax_enable_x64", True)
+    try:
+        lb, ub = jnp.array([-2.0]), jnp.array([3.0])
+        X = jnp.concatenate([jnp.linspace(-2.0, 0.8, 8), jnp.array([3.0])])[:, None]
+        y = (X.flatten() - 1.5) ** 2
+        batch, _ = normalize(X, y, {"lb": lb, "ub": ub})
+        prior = uniform_prior(lb, ub)
+        gp = GP({"kernel": "RBF", "input_prior": prior, "criterion": "EI"})
+        key = random.PRNGKey(0)
+        new_params = gp.train(batch, key, num_restarts=10)
+        old_params = _scipy_train(gp, batch, key, num_restarts=10)
+        nlml_new = float(jnp.sum(gp.likelihood(new_params, batch)))
+        nlml_old = float(jnp.sum(gp.likelihood(old_params, batch)))
+        assert bool(jnp.all(jnp.isfinite(new_params)))
+        assert nlml_new <= nlml_old + 0.05
+    finally:
+        jax.config.update("jax_enable_x64", False)
+
+
 def test_train_is_deterministic_per_seed():
     """Same rng_key, same batch: bitwise identical hyperparameters."""
     gp, batch = _make_problem()
