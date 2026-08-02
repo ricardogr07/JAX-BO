@@ -126,6 +126,55 @@ def test_selected_nlml_matches_scipy_on_gap_fixture():
         jax.config.update("jax_enable_x64", False)
 
 
+def test_gap_posterior_stays_usable_across_seeds():
+    """Bound a KNOWN, DISCLOSED regression of the on-device path.
+
+    The property is the one ``test_gp_1d_uncertainty_grows_in_data_gap``
+    asserts, checked across seeds instead of at PRNGKey(0) alone:
+    predictive std in the unsampled gap must exceed the std at the
+    training inputs. Measured over seeds 0 to 19 at 10 restarts, this path
+    breaks it on 1 seed (12), where the selected optimum has zero
+    predictive std at 5 of 9 training points; the scipy L-BFGS-B path it
+    replaces breaks it on 0 of 20. The regression is disclosed on the PR
+    for issue #31 rather than fixed, because no cheap selection-time
+    screen separates the pathological endpoint from a healthy one: the
+    kernel matrices here run at condition number 1e15 to 1e17 as their
+    NORMAL state on both paths, so neither a zero-variance check (the
+    scipy path trips it on 12 of 20 seeds of the 4D fixture) nor a
+    conditioning threshold (usable endpoints reach log10 cond 17.3,
+    broken ones start at 14.4) discriminates. The underlying fragility is
+    the model's fixed 1e-8 jitter at that conditioning, which predates
+    this work and is tracked separately.
+
+    So this test does not assert the regression away. It pins the RATE, so
+    1 in 20 cannot silently become 10 in 20. Seeds 0 to 7 all pass today;
+    the bound of 1 leaves room for a platform that lands differently on
+    one seed while still failing loudly on a systemic worsening.
+    """
+    jax.config.update("jax_enable_x64", True)
+    try:
+        lb, ub = jnp.array([-2.0]), jnp.array([3.0])
+        bounds = {"lb": lb, "ub": ub}
+        X = jnp.concatenate([jnp.linspace(-2.0, 0.8, 8), jnp.array([3.0])])[:, None]
+        y = (X.flatten() - 1.5) ** 2
+        batch, _ = normalize(X, y, bounds)
+        prior = uniform_prior(lb, ub)
+        gp = GP({"kernel": "RBF", "input_prior": prior, "criterion": "EI"})
+        # Midpoint of the unsampled (0.8, 3.0) gap.
+        probe = jnp.array([[1.9]])
+
+        broken = []
+        for seed in range(8):
+            params = gp.train(batch, random.PRNGKey(seed), num_restarts=10)
+            _, std_train = gp.predict(X, params=params, batch=batch, bounds=bounds)
+            _, std_gap = gp.predict(probe, params=params, batch=batch, bounds=bounds)
+            if not float(std_gap[0]) > float(jnp.max(std_train)):
+                broken.append(seed)
+        assert len(broken) <= 1, f"gap posterior unusable on seeds {broken} of 0..7"
+    finally:
+        jax.config.update("jax_enable_x64", False)
+
+
 def test_train_is_deterministic_per_seed():
     """Same rng_key, same batch: bitwise identical hyperparameters."""
     gp, batch = _make_problem()
