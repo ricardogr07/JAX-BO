@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.1](https://github.com/ricardogr07/JAX-BO/compare/v0.2.0...v0.2.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* authenticate release-please with a PAT so tags trigger release.yml ([#73](https://github.com/ricardogr07/JAX-BO/issues/73)) ([7287ddd](https://github.com/ricardogr07/JAX-BO/commit/7287ddd3c5ebfe1ffb968a6f990a36baaee915d3)), closes [#66](https://github.com/ricardogr07/JAX-BO/issues/66)
+
+
+### Performance Improvements
+
+* batched-start acquisition multi-start via score_candidates (3c) ([#72](https://github.com/ricardogr07/JAX-BO/issues/72)) ([27f607f](https://github.com/ricardogr07/JAX-BO/commit/27f607fecd32a4cb26a51dc6d9511adf87e33ba8))
+* GP.train multi-start fully on device, vmapped across restarts (3b) ([#70](https://github.com/ricardogr07/JAX-BO/issues/70)) ([469c0b6](https://github.com/ricardogr07/JAX-BO/commit/469c0b643edffc09b70b5873bc11e2a512d684fe))
+* key the GP jit cache on config, not instance identity (3a) ([#68](https://github.com/ricardogr07/JAX-BO/issues/68)) ([2e2bb87](https://github.com/ricardogr07/JAX-BO/commit/2e2bb873282d91e7e790e413d4b0eef4ae85a8a9))
+
 ## [0.2.0](https://github.com/ricardogr07/JAX-BO/compare/v0.1.2...v0.2.0) (2026-08-01)
 
 
