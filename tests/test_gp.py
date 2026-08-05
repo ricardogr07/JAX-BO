@@ -21,12 +21,15 @@ path stays covered by ``test_compat``.
 
 import jax
 import jax.numpy as jnp
+import numpy as onp
 import pytest
 from jax import random, vmap
 from jax.scipy.stats import norm
+from scipy.stats import qmc
 
 from jaxbo import acquisitions, initializers
 from jaxbo.gp import GP
+from jaxbo.optimizers import minimize_lbfgs_grad
 from jaxbo.priors import uniform_prior
 from jaxbo.utils import normalize
 
@@ -424,3 +427,187 @@ def test_gp_4d_predict_generalizes_to_held_out(gp_4d):
     # Observed relative RMSE ~1e-4 across seeds (float64); 0.05 keeps a
     # huge margin while a mean-only predictor would score ~1.0.
     assert float(rel_rmse) < 0.05
+
+
+def _serial_next_point(gp, num_restarts, **kwargs):
+    """The pre-batched-start serial multi-start loop, kept as the parity
+    reference: LHS-sample num_restarts starts with the same seeding as
+    ``compute_next_point_lbfgs``, polish every one with bounded L-BFGS-B,
+    return the best polished point and its acquisition value.
+    """
+
+    def objective(x):
+        value, grads = gp.acq_value_and_grad(x, **kwargs)
+        return onp.array(value), onp.array(grads)
+
+    lb, ub = kwargs["bounds"]["lb"], kwargs["bounds"]["ub"]
+    rng_key = kwargs["rng_key"]
+    onp.random.seed(rng_key[0])
+    sampler = qmc.LatinHypercube(d=lb.shape[0], seed=int(rng_key[0]))
+    inits = lb + (ub - lb) * sampler.random(num_restarts)
+    dom_bounds = tuple(map(tuple, jnp.vstack((lb, ub)).T))
+    solutions, values = [], []
+    for i in range(num_restarts):
+        pos, val = minimize_lbfgs_grad(objective, inits[i, :], bnds=dom_bounds)
+        solutions.append(pos)
+        values.append(val)
+    loc = jnp.vstack(solutions)
+    acq = jnp.vstack(values)
+    idx_best = jnp.argmin(acq)
+    return loc[idx_best : idx_best + 1, :]
+
+
+def _next_point_kwargs(fitted, seed=7):
+    return {
+        "params": fitted["opt_params"],
+        "batch": fitted["batch"],
+        "bounds": fitted["bounds"],
+        "rng_key": random.PRNGKey(seed),
+    }
+
+
+@pytest.mark.parametrize("problem", ["gp_1d", "gp_4d"])
+def test_next_point_lbfgs_batched_start_shapes_and_bounds(problem, request):
+    """Batched-start EI path: valid shapes, in-bounds results, and the
+    documented restart mapping (k = min(10, max(2, 10 // 5)) = 2 polishes
+    for the default budget of 10)."""
+    fitted = request.getfixturevalue(problem)
+    kwargs = _next_point_kwargs(fitted)
+    lb, ub = fitted["bounds"]["lb"], fitted["bounds"]["ub"]
+    dim = lb.shape[0]
+
+    x_new, acq, loc = fitted["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+
+    assert x_new.shape == (1, dim)
+    assert acq.shape == (2, 1)
+    assert loc.shape == (2, dim)
+    assert bool(jnp.all(jnp.isfinite(x_new)))
+    assert bool(jnp.all(loc >= lb)) and bool(jnp.all(loc <= ub))
+    assert bool(jnp.all(x_new >= lb)) and bool(jnp.all(x_new <= ub))
+    # A polish returns NaN where the EI gradient NaNs at a variance-clipped
+    # point, and with k = 2 both can. Whether that happens on a given
+    # fixture is platform-dependent (the gp_4d model is near-singular, so
+    # its top candidates score EI 0 exactly, which lands at -0.0 on some
+    # platforms and NaN on others), so the assert is the contract that
+    # holds either way: the selected point is the best finite polish, or,
+    # when none survives, the top-ranked start.
+    # The fallback case is covered by the finite and in-bounds asserts above,
+    # and exercised directly by test_next_point_lbfgs_all_polishes_failed.
+    if bool(jnp.any(jnp.isfinite(acq))):
+        assert bool(jnp.all(x_new[0] == loc[int(jnp.nanargmin(acq))]))
+
+
+@pytest.mark.parametrize("problem", ["gp_1d", "gp_4d"])
+def test_next_point_lbfgs_batched_start_matches_or_beats_serial(problem, request):
+    """The batched-start point is at least as good as the old serial path's.
+
+    Equal-or-better acquisition value within a small tolerance is the bar,
+    not identical points: both paths polish with the same bounded L-BFGS-B
+    but from different (equally seeded) start sets.
+    """
+    fitted = request.getfixturevalue(problem)
+    kwargs = _next_point_kwargs(fitted)
+    gp = fitted["gp"]
+
+    x_new, _, _ = gp.compute_next_point_lbfgs(num_restarts=10, **kwargs)
+    x_serial = _serial_next_point(gp, 10, **kwargs)
+
+    # ravel: acquisition returns a 0-d value here (the fixtures carry 1-D
+    # targets, so predict's mean is 1-D and the [0] convention consumes it).
+    acq_new = float(jnp.ravel(gp.acquisition(x_new[0], **kwargs))[0])
+    acq_serial = float(jnp.ravel(gp.acquisition(x_serial[0], **kwargs))[0])
+    if not (onp.isfinite(acq_new) and onp.isfinite(acq_serial)):
+        # Nothing to compare: the model is degenerate enough that EI is not
+        # finite at the points BOTH paths pick, so neither is better. This is
+        # the gp_4d fixture on some platforms (near-singular kernel, EI 0 at
+        # the optimum, tracked in #71), not a property of the batched path.
+        pytest.skip(f"criterion not finite on either path: {acq_new}, {acq_serial}")
+    assert acq_new <= acq_serial + 1e-6
+
+
+def test_next_point_lbfgs_is_deterministic(gp_1d):
+    """Same rng_key, same result: seeding survives the batched-start path."""
+    kwargs = _next_point_kwargs(gp_1d)
+    x_a, acq_a, loc_a = gp_1d["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+    x_b, acq_b, loc_b = gp_1d["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+    onp.testing.assert_array_equal(onp.asarray(x_a), onp.asarray(x_b))
+    onp.testing.assert_array_equal(onp.asarray(acq_a), onp.asarray(acq_b))
+    onp.testing.assert_array_equal(onp.asarray(loc_a), onp.asarray(loc_b))
+
+
+def test_next_point_lbfgs_all_polishes_failed(gp_1d, monkeypatch):
+    """Every polish returning NaN yields a usable point, not an empty one.
+
+    Reachable on the batched path in a way it was not on the serial one:
+    k = 2 polishes at the default budget, both starting in the same
+    top-scored region, so one degenerate region takes out the whole set.
+    ``nanargmin`` has no answer over an all-NaN column and returns an
+    out-of-range index, which silently sliced to a (0, D) array and handed
+    the caller an empty point (seen on the jax floor lanes). The contract
+    is that the top-ranked start comes back instead: finite, in bounds, and
+    good enough for a BO loop to keep running.
+    """
+    import jaxbo.gp as gp_module
+
+    kwargs = _next_point_kwargs(gp_1d)
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+
+    def all_nan(objective, x0, bnds=None):
+        return x0 * jnp.nan, jnp.nan
+
+    monkeypatch.setattr(gp_module, "minimize_lbfgs_grad", all_nan)
+    x_new, acq, loc = gp_1d["gp"].compute_next_point_lbfgs(num_restarts=10, **kwargs)
+
+    assert x_new.shape == (1, lb.shape[0])
+    assert bool(jnp.all(jnp.isfinite(x_new)))
+    assert bool(jnp.all(x_new >= lb)) and bool(jnp.all(x_new <= ub))
+    # The failed polishes are still reported, per the return contract.
+    assert bool(jnp.all(jnp.isnan(acq)))
+    assert loc.shape == (2, lb.shape[0])
+
+
+def test_next_point_lbfgs_serial_fallback_keeps_restart_count(gp_1d):
+    """A criterion without a batched scorer (IMSE) keeps the serial contract:
+    one polish per restart, so acq and loc have num_restarts rows."""
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+    gp_imse = make_gp(lb, ub, criterion="IMSE")
+    kwargs = _next_point_kwargs(gp_1d)
+
+    x_new, acq, loc = gp_imse.compute_next_point_lbfgs(num_restarts=2, **kwargs)
+
+    assert x_new.shape == (1, 1)
+    assert acq.shape == (2, 1)
+    assert loc.shape == (2, 1)
+    assert bool(jnp.all(loc >= lb)) and bool(jnp.all(loc <= ub))
+
+
+def test_batched_start_scorer_capability_map(gp_1d):
+    """EI maps to a batched scorer; per-candidate-state criteria map to None."""
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+    assert gp_1d["gp"]._batched_start_scorer(batch=gp_1d["batch"]) is not None
+    for criterion in ["TS", "IMSE", "IMSE_L"]:
+        assert make_gp(lb, ub, criterion=criterion)._batched_start_scorer() is None
+
+
+def test_batched_start_scorer_excludes_gp_subclasses(gp_1d):
+    """A GP subclass keeps the serial path even on a batched-capable criterion.
+
+    score_candidates forwards only params, batch and bounds, so a subclass
+    overriding predict with extra required kwargs would break on the batched
+    path, and one overriding acquisition would have its starts ranked by the
+    stock criterion instead of the override. The check is on exact type, so
+    only the core GP opts in.
+    """
+
+    class _SubGP(GP):
+        pass
+
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+    sub = _SubGP(
+        {
+            "kernel": "RBF",
+            "criterion": "EI",
+            "input_prior": uniform_prior(lb, ub),
+        }
+    )
+    assert sub._batched_start_scorer(batch=gp_1d["batch"]) is None

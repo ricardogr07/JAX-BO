@@ -327,18 +327,81 @@ class GPmodel(ABC):
 
         return primals, grads
 
+    def _batched_start_scorer(self, **kwargs: Any):
+        """Map the model criterion to a batched candidate scorer, if one exists.
+
+        :func:`jaxbo.acquisitions.score_candidates` can rank a whole candidate
+        batch in one dispatch for criteria that depend only on the shared
+        predictive mean and std (EI, LCB, US, CLSF). Criteria that need
+        per-candidate state it cannot express (the LW-* weights, TS posterior
+        draws, the IMSE covariance scans) return None and keep the serial
+        multi-start path. Only the exact :class:`GP` model qualifies: the
+        multifidelity and MCMC subclasses have ``predict`` contracts beyond
+        the ``params, batch, bounds`` signature score_candidates calls.
+
+        Args:
+            **kwargs: The compute_next_point_lbfgs kwargs; the same keys the
+                serial acquisition path reads for the criterion (e.g. 'kappa'
+                for LCB, 'norm_const' for CLSF) are required here.
+
+        Returns:
+            Tuple[Callable, Dict] of (acq_fn, shared acq kwargs) for
+            score_candidates, or None when the criterion (or model class)
+            needs the serial path.
+        """
+        # Exact type, not isinstance: a user subclass may override predict
+        # (score_candidates forwards only params, batch, bounds) or
+        # acquisition (its starts would be ranked by the stock criterion
+        # instead of the override). Subclasses keep the serial path.
+        if type(self) is not GP:
+            return None
+        criterion = self.options["criterion"]
+        if criterion == "EI":
+            return acquisitions.EI, {"best": np.min(kwargs["batch"]["y"])}
+        if criterion == "LCB":
+            return acquisitions.LCB, {"kappa": kwargs["kappa"]}
+        if criterion == "US":
+            return lambda mean, std: acquisitions.US(std), {}
+        if criterion == "CLSF":
+            norm_const = kwargs["norm_const"]
+
+            def clsf_denorm(mean, std, kappa):
+                denorm_mean = mean * norm_const["sigma_y"] + norm_const["mu_y"]
+                denorm_std = std * norm_const["sigma_y"]
+                return acquisitions.CLSF(denorm_mean, denorm_std, kappa)
+
+            return clsf_denorm, {"kappa": kwargs["kappa"]}
+        return None
+
     def compute_next_point_lbfgs(
         self, num_restarts: int = 10, **kwargs: Any
     ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Optimize the acquisition function using L-BFGS-B with multiple random restarts.
+        Optimize the acquisition function using batched-start L-BFGS-B.
 
-        This method searches for the input location that minimizes the acquisition function
-        by performing multiple L-BFGS-B optimizations from different initializations
-        within the input bounds.
+        ``num_restarts`` remains the multi-start budget. When the criterion
+        supports batched scoring (see :meth:`_batched_start_scorer`), the
+        budget maps to ``32 * num_restarts`` Latin hypercube candidates
+        scored in ONE vectorized dispatch, of which only the
+        ``k = min(num_restarts, max(2, num_restarts // 5))`` best become
+        L-BFGS-B polish starts. That preserves (and widens) the exploration
+        the serial path bought with ``num_restarts`` blind polishes while
+        paying the expensive per-step host round-trip of the scipy optimizer
+        k times instead of num_restarts times. Criteria without a batched
+        scorer keep the exact previous behavior: num_restarts LHS starts,
+        one polish each.
+
+        The polish loop itself stays serial on purpose: the bounded
+        optimizer is scipy L-BFGS-B (:func:`jaxbo.optimizers.minimize_lbfgs_grad`),
+        which runs on the host and cannot be vmapped on device; a
+        device-native bounded quasi-Newton would need a new dependency.
+        Reducing the number of polished starts via one batched scoring
+        dispatch is the vectorization this path gets instead.
 
         Args:
-            num_restarts (int): Number of random initializations for multi-start optimization.
+            num_restarts (int): Multi-start budget. On the batched path it
+                sets the scoring batch (32x) and the polish count k as above;
+                on the serial path it is the number of polishes, as before.
             **kwargs (dict): Dictionary containing required elements such as:
                 - 'bounds': {'lb': np.ndarray, 'ub': np.ndarray}
                 - 'rng_key': random key for reproducibility
@@ -347,8 +410,10 @@ class GPmodel(ABC):
         Returns:
             Tuple[np.ndarray, np.ndarray, np.ndarray]:
                 - x_new: Best point found, shape (1, D)
-                - acq: Acquisition values for each restart, shape (num_restarts, 1)
-                - loc: Locations tested, shape (num_restarts, D)
+                - acq: Acquisition values per polished start, shape (m, 1)
+                - loc: Polished locations, shape (m, D)
+                where m == k on the batched-start path and
+                m == num_restarts on the serial path.
         """
 
         def objective(x: np.ndarray) -> Tuple[onp.ndarray, onp.ndarray]:
@@ -361,11 +426,36 @@ class GPmodel(ABC):
         lb, ub = bounds["lb"], bounds["ub"]
         dim = lb.shape[0]
 
-        # Generate initial points using Latin Hypercube Sampling
+        # Generate starting points using Latin Hypercube Sampling
         rng_key = kwargs["rng_key"]
         onp.random.seed(rng_key[0])  # Deterministic initialization
         sampler = qmc.LatinHypercube(d=dim, seed=int(rng_key[0]))
-        initial_points = lb + (ub - lb) * sampler.random(num_restarts)
+
+        scorer = self._batched_start_scorer(**kwargs)
+        if scorer is None:
+            starts = lb + (ub - lb) * sampler.random(num_restarts)
+        else:
+            acq_fn, acq_kwargs = scorer
+            candidates = lb + (ub - lb) * sampler.random(32 * num_restarts)
+            cand_scores = acquisitions.score_candidates(
+                self,
+                candidates,
+                params=kwargs["params"],
+                batch=kwargs["batch"],
+                bounds=bounds,
+                acq_fn=acq_fn,
+                **acq_kwargs,
+            )
+            k = min(num_restarts, max(2, num_restarts // 5))
+            # Never rank a non-finite score as best. On a near-singular model
+            # the criterion NaNs at variance-clipped candidates, and those are
+            # exactly the starts a polish cannot recover from; the serial path
+            # diluted that risk across num_restarts blind starts, k of them
+            # cannot. Sorting them last costs nothing when every score is
+            # finite, and when none is, the order is arbitrary either way and
+            # the all-failed guard below catches it.
+            cand_scores = np.where(np.isfinite(cand_scores), cand_scores, np.inf)
+            starts = candidates[np.argsort(cand_scores)[:k]]
 
         # Format bounds for SciPy optimizer
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
@@ -373,19 +463,32 @@ class GPmodel(ABC):
         # Perform L-BFGS-B optimization from each starting point
         solutions = []
         scores = []
-        for i in range(num_restarts):
-            pos, val = minimize_lbfgs_grad(
-                objective, initial_points[i, :], bnds=dom_bounds
-            )
+        for i in range(starts.shape[0]):
+            pos, val = minimize_lbfgs_grad(objective, starts[i, :], bnds=dom_bounds)
             solutions.append(pos)
             scores.append(val)
 
-        loc = np.vstack(solutions)  # Shape: (num_restarts, D)
-        acq = np.vstack(scores)  # Shape: (num_restarts, 1)
+        loc = np.vstack(solutions)  # Shape: (m, D)
+        acq = np.vstack(scores)  # Shape: (m, 1)
 
-        # Select the point with the best acquisition score
-        idx_best = np.argmin(acq)
-        x_new = loc[idx_best : idx_best + 1, :]  # Shape: (1, D)
+        # Select the best acquisition score. nanargmin, like train(): a
+        # polish can return NaN where the acquisition gradient NaNs at a
+        # variance-clipped point, and argmin would select that row.
+        #
+        # EVERY polish failing is reachable, and more so on the batched path,
+        # which polishes k starts instead of num_restarts (k = 2 at the
+        # default budget, so two NaNs is all it takes). nanargmin has no
+        # answer there: it returns an out-of-range index, and the caller gets
+        # a silently EMPTY (0, D) point rather than an error. Fall back to
+        # the best start instead, which is finite and in bounds by
+        # construction: the top-ranked scored candidate on the batched path,
+        # the first LHS draw on the serial one. A start beats both a NaN and
+        # an empty array, and a BO loop keeps running.
+        if bool(np.any(np.isfinite(acq))):
+            idx_best = np.nanargmin(acq)
+            x_new = loc[idx_best : idx_best + 1, :]  # Shape: (1, D)
+        else:
+            x_new = starts[0:1, :]  # Shape: (1, D)
 
         return x_new, acq, loc
 
@@ -395,6 +498,14 @@ class GPmodel(ABC):
         over a grid or set of candidate points and picking the one with the minimum value.
 
         This method is useful when working with a precomputed candidate set (e.g., grid search).
+
+        Note:
+            This is deliberately NOT routed through
+            :func:`jaxbo.acquisitions.score_candidates`: the vmap over the
+            jitted ``self.acquisition`` is already a single batched dispatch
+            (candidate-independent work such as the Cholesky factor is not
+            batched by vmap), and it supports every criterion, including the
+            LW-*, TS, and IMSE ones score_candidates cannot express.
 
         Args:
             X_cand (np.ndarray): Array of candidate points, shape (N, D).
