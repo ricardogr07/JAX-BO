@@ -349,7 +349,11 @@ class GPmodel(ABC):
             score_candidates, or None when the criterion (or model class)
             needs the serial path.
         """
-        if not isinstance(self, GP):
+        # Exact type, not isinstance: a user subclass may override predict
+        # (score_candidates forwards only params, batch, bounds) or
+        # acquisition (its starts would be ranked by the stock criterion
+        # instead of the override). Subclasses keep the serial path.
+        if type(self) is not GP:
             return None
         criterion = self.options["criterion"]
         if criterion == "EI":

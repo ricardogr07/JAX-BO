@@ -587,3 +587,27 @@ def test_batched_start_scorer_capability_map(gp_1d):
     assert gp_1d["gp"]._batched_start_scorer(batch=gp_1d["batch"]) is not None
     for criterion in ["TS", "IMSE", "IMSE_L"]:
         assert make_gp(lb, ub, criterion=criterion)._batched_start_scorer() is None
+
+
+def test_batched_start_scorer_excludes_gp_subclasses(gp_1d):
+    """A GP subclass keeps the serial path even on a batched-capable criterion.
+
+    score_candidates forwards only params, batch and bounds, so a subclass
+    overriding predict with extra required kwargs would break on the batched
+    path, and one overriding acquisition would have its starts ranked by the
+    stock criterion instead of the override. The check is on exact type, so
+    only the core GP opts in.
+    """
+
+    class _SubGP(GP):
+        pass
+
+    lb, ub = gp_1d["bounds"]["lb"], gp_1d["bounds"]["ub"]
+    sub = _SubGP(
+        {
+            "kernel": "RBF",
+            "criterion": "EI",
+            "input_prior": uniform_prior(lb, ub),
+        }
+    )
+    assert sub._batched_start_scorer(batch=gp_1d["batch"]) is None
