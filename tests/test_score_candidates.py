@@ -91,6 +91,14 @@ def test_acq_fn_and_kwargs_forwarding(gp1d):
         serial.append(float(acquisitions.LCB(mu, std, kappa=3.0)[0]))
 
     assert scores.shape == (N_CAND,)
+    # rtol stays at the pre-3b 1e-4. The fixture's trained params do move
+    # whenever the train optimizer changes, and an earlier cut of this
+    # branch loosened this to 1e-3 after measuring ~3e-4 relative; that
+    # was against the pre-Wolfe optimizer. Re-measured at the current one,
+    # the batched vs serial float32 reduction reorder is 2.9e-5 worst
+    # case, so 1e-4 holds with 3.5x margin and the loosening is not
+    # needed. A real forwarding bug (kappa lost, mu/std swapped) is O(1)
+    # and clears either bound.
     onp.testing.assert_allclose(
         onp.asarray(scores), onp.asarray(serial), rtol=1e-4, atol=1e-6
     )
