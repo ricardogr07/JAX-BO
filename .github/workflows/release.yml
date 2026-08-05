@@ -1,11 +1,12 @@
 name: Publish Python distribution to PyPI
 
+# Tag push only. Once release-please authenticates with a PAT (issue #66) it
+# emits both a tag push and a release-created event; triggering on both would
+# start two concurrent runs racing on the :latest docker tag.
 on:
   push:
     tags:
       - 'v*'
-  release:
-    types: [created]
   workflow_dispatch:
 
 
