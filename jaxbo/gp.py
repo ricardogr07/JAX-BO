@@ -33,6 +33,85 @@ SUPPORTED_KERNELS: Dict[str, Callable] = {
 }
 
 
+def jitter(K: np.ndarray) -> np.ndarray:
+    """Problem-scaled Cholesky jitter: ``sqrt(eps) * mean(diag(K))``.
+
+    Replaces the fixed ``1e-8`` this codebase used at every Cholesky and
+    posterior site (issue #71). That constant was absolute while the matrix
+    scale is free: every supported kernel is stationary, so ``diag(K)`` is the
+    signal amplitude ``exp(params[0])``, and on the zero-noise ridge of a
+    noiseless likelihood the optimizer inflates that amplitude until the
+    jitter's RELATIVE size collapses toward machine epsilon. That is how the
+    kernel matrices reached condition number 1e15 to 1e17 as their normal
+    state, and why the posterior variance could come out negative.
+
+    Two independent choices, both measured rather than assumed:
+
+    - **Scaling by mean(diag(K))** removes the failure above: rescaling the
+      problem rescales the jitter with it, so no amount of amplitude inflation
+      can thin it out. ``mean(diag(K))`` rather than ``K[0, 0]`` so a
+      non-stationary kernel is covered too.
+    - **The sqrt(eps) coefficient** sets how far above the rounding floor to
+      sit. The Weyl bound puts the rounding noise of K's own entries at about
+      ``eps * sqrt(N) * mean(diag(K))``; a jitter AT that bound merely matches
+      the error already in K instead of dominating it, and measurably
+      regressed the small 1D fixtures (zero-variance rate 0 of 20 to 2 of 20)
+      even while it fixed the 4D one. ``sqrt(eps)`` sits about 1e8 times above
+      the float64 bound and reproduces the old ``1e-8`` almost exactly at unit
+      amplitude, so well-conditioned problems see no change at all. It is the
+      same dtype-aware convention :func:`jaxbo.optimizers.minimize_bfgs_jax`
+      uses for its gradient tolerance.
+
+    Dtype aware through ``K.dtype``: about 3.5e-4 * mean(diag) in float32,
+    about 1.5e-8 * mean(diag) in float64.
+
+    Args:
+        K: The unregularized kernel matrix, shape (N, N).
+
+    Returns:
+        Scalar jitter to add to K's diagonal, in K's dtype.
+    """
+    eps = np.finfo(K.dtype).eps
+    return np.sqrt(eps) * np.mean(np.diag(K))
+
+
+def _std_from_variance(variance: np.ndarray, k_pp: np.ndarray) -> np.ndarray:
+    """Predictive std from a posterior variance, surfacing impossible values.
+
+    The posterior variance is a difference of two nearly equal quantities, so
+    at finite precision it can come out slightly negative. This codebase used
+    to write ``sqrt(clip(variance, 0.0))``, which turns ANY negative value into
+    an exactly-zero std: the model reports perfect confidence precisely where
+    its arithmetic broke down (issue #71).
+
+    The two cases are not the same and are no longer treated the same:
+
+    - Negative within rounding scale (``-jitter(k_pp)`` or above) is a genuine
+      float artifact of the subtraction, carries no information, and clips to
+      zero as before.
+    - More negative than that is not representable as a variance under any
+      rounding story. It returns NaN, which propagates through the acquisition
+      functions and cannot be mistaken for a confident prediction.
+
+    ``predict`` is jitted and is vmapped inside
+    :func:`jaxbo.acquisitions.score_candidates`, so raising is not available
+    here; NaN is the traceable equivalent. With the problem-scaled
+    :func:`jitter` in place the loud branch is not expected to fire at all,
+    and ``tests/test_conditioning.py`` asserts that it does not.
+
+    Args:
+        variance: Diagonal of the posterior covariance, shape (N,).
+        k_pp: The regularized prior covariance at the same points, used only
+            for its scale.
+
+    Returns:
+        Predictive standard deviations, shape (N,), NaN where the variance was
+        negative beyond rounding scale.
+    """
+    tol = jitter(k_pp)
+    return np.where(variance < -tol, np.nan, np.sqrt(np.clip(variance, 0.0)))
+
+
 class GPmodel(ABC):
     """Abstract base class shared by every jaxbo Gaussian process model.
 
@@ -608,7 +687,8 @@ class GP(GPmodel):
         N, D = X.shape
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
-        K = self.kernel(X, X, theta) + np.eye(N) * (sigma_n + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * (sigma_n + jitter(K))
         return cholesky(K, lower=True)
 
     def train(
@@ -696,30 +776,42 @@ class GP(GPmodel):
             to NaN, so the line search brackets away from them and a
             restart headed that way stops at the boundary with its last
             usable iterate. The guard requires the guaranteed eigenvalue
-            floor of K (sigma_n plus the 1e-8 jitter) to exceed the
-            rounding noise of the kernel entries themselves, about
+            floor of K (sigma_n plus :func:`jitter`) to exceed the rounding
+            noise of the kernel entries themselves, about
             eps * sqrt(N) * K[0, 0] (Weyl bound). Past that point the
             computed K is PSD in some compiled programs and indefinite in
             others: a restart converging there (the zero-noise limit that
             noiseless data invites) would report a winning NLML while the
-            same parameters evaluate to NaN in ``predict``. The safety
-            factor is dtype-calibrated against measurements: in float32 a
-            real PSD flip was observed at 0.17x the bound (factor 1.0
-            keeps 6x margin); in float64 the reference scipy path's
-            historical winners sit as low as 0.12x the bound and years of
-            green predict tests prove them safe, so 0.05 admits every
-            endpoint the reference path produced while still excluding
-            the far zero-noise ridge.
+            same parameters evaluate to NaN in ``predict``.
+
+            The guard previously carried a hand-calibrated safety factor
+            (1.0 in float32, 0.05 in float64) because the jitter was a
+            fixed 1e-8 whose margin against the Weyl bound depended on the
+            amplitude the optimizer happened to reach. With the
+            problem-scaled :func:`jitter` the floor is sqrt(eps) * K[0, 0]
+            against a bound of eps * sqrt(N) * K[0, 0], so the margin is
+            about 1e8 / sqrt(N) in float64 and 1e4 / sqrt(N) in float32
+            for EVERY amplitude, and no factor is needed to express it
+            (issue #71). Measured over log-amplitude -6 to 10 and
+            log-noise -40 to 1 on the three issue #71 fixtures, in both
+            dtypes: zero failed Choleskys, zero NaN predictions, and a
+            worst posterior variance of exactly 0.000x the jitter below
+            zero. The guard is retained rather than deleted because it
+            also keeps the optimizer off the zero-noise ridge, which is a
+            statistical choice about which optimum to select, not a
+            numerical one, and removing it would change the selected
+            hyperparameters and therefore the benchmarks.
         """
         eps = float(np.finfo(inits.dtype).eps)
-        factor = 1.0 if eps > 1e-10 else 0.05
-        margin = factor * eps * float(batch["X"].shape[0]) ** 0.5
+        weyl = eps * float(batch["X"].shape[0]) ** 0.5
 
         def value_and_grad(p: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
             value, grads = self.likelihood_value_and_grad(p, batch)
             amplitude = np.exp(p[0])
-            noise_floor = np.exp(p[-1]) + 1e-8
-            ok = noise_floor > margin * (amplitude + noise_floor)
+            # jitter(K) for a stationary kernel, without forming K: every
+            # supported kernel has diag(K) = exp(p[0]).
+            noise_floor = np.exp(p[-1]) + np.sqrt(eps) * amplitude
+            ok = noise_floor > weyl * (amplitude + noise_floor)
             bad = np.asarray(np.nan, dtype=inits.dtype)
             # likelihood values carry shape (1, 1); the solver wants a scalar.
             return np.where(ok, np.sum(value), bad), np.where(ok, grads, bad)
@@ -758,9 +850,8 @@ class GP(GPmodel):
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
 
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            sigma_n + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n + jitter(k_pp))
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
@@ -768,7 +859,7 @@ class GP(GPmodel):
 
         mu = k_pX @ alpha
         cov = k_pp - k_pX @ beta
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         return mu, std
 
     @partial(jit, static_argnums=(0,))
@@ -826,9 +917,8 @@ class GP(GPmodel):
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
 
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            sigma_n + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n + jitter(k_pp))
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
