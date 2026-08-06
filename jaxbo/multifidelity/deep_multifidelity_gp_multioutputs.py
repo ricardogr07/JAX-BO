@@ -20,7 +20,7 @@ import jaxbo.acquisitions as acquisitions
 import jaxbo.initializers as initializers
 from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.multifidelity.nn import init_MomentumResNet, init_NN, init_ResNet
-from jaxbo.optimizers import minimize_lbfgs
+from jaxbo.optimizers import minimize_lbfgs_grad
 
 
 class DeepMultifidelityGP_MultiOutputs(GPmodel):
@@ -150,7 +150,7 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
                 if self.options["net_arch"] == "MomentumResNet":
                     nn_params = self.net_init(key2)
                 init_params = np.concatenate([gp_params, ravel_pytree(nn_params)[0]])
-                p, val = minimize_lbfgs(objective, init_params, verbose, maxfun)
+                p, val = minimize_lbfgs_grad(objective, init_params, verbose, maxfun)
                 params.append(p)
                 likelihood.append(val)
             params = np.vstack(params)
@@ -359,7 +359,7 @@ class DeepMultifidelityGP_MultiOutputs(GPmodel):
         x0 = lb + (ub - lb) * sampler.random(num_restarts)
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
         for i in range(num_restarts):
-            pos, val = minimize_lbfgs(objective, x0[i, :], bnds=dom_bounds)
+            pos, val = minimize_lbfgs_grad(objective, x0[i, :], bnds=dom_bounds)
             loc.append(pos)
             acq.append(val)
         loc = np.vstack(loc)

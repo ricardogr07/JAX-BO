@@ -18,7 +18,7 @@ from jax.scipy.linalg import cholesky, solve_triangular
 import jaxbo.initializers as initializers
 from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.multifidelity.nn import init_MomentumResNet, init_NN, init_ResNet
-from jaxbo.optimizers import minimize_lbfgs
+from jaxbo.optimizers import minimize_lbfgs_grad
 
 
 class DeepMultifidelityGP(GPmodel):
@@ -149,7 +149,7 @@ class DeepMultifidelityGP(GPmodel):
             if self.options["net_arch"] == "MomentumResNet":
                 nn_params = self.net_init(key2)
             init_params = np.concatenate([gp_params, ravel_pytree(nn_params)[0]])
-            p, val = minimize_lbfgs(objective, init_params, verbose, maxfun)
+            p, val = minimize_lbfgs_grad(objective, init_params, verbose, maxfun)
             params.append(p)
             likelihood.append(val)
         params = np.vstack(params)
