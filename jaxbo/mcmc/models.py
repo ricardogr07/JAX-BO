@@ -18,7 +18,7 @@ from numpyro import sample
 import numpyro.distributions as dist
 from numpyro.infer import MCMC, NUTS
 
-from jaxbo.gp import GPmodel
+from jaxbo.gp import GPmodel, _std_from_variance, jitter
 
 
 class MCMCmodel(GPmodel):
@@ -160,7 +160,7 @@ class MCMCGP(MCMCmodel):
         Model Details:
             - Places log-normal priors on the kernel variance (`kernel_var`), kernel lengthscales (`kernel_length`), and noise variance (`noise_var`).
             - Constructs the kernel matrix using the provided kernel function and sampled hyperparameters.
-            - Adds noise variance and a small jitter (1e-8) to the diagonal for numerical stability.
+            - Adds noise variance and a problem-scaled jitter (:func:`jaxbo.gp.jitter`) to the diagonal for numerical stability.
             - Observes the targets `y` under a multivariate normal distribution with zero mean and the computed covariance matrix.
 
         Returns:
@@ -175,7 +175,8 @@ class MCMCGP(MCMCmodel):
         noise = sample("noise_var", dist.LogNormal(0.0, 10.0))
         theta = np.concatenate([np.array([var]), np.array(length)])
         # compute kernel
-        K = self.kernel(X, X, theta) + np.eye(N) * (noise + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * (noise + jitter(K))
         # sample Y according to the standard gaussian process formula
         sample(
             "y", dist.MultivariateNormal(loc=np.zeros(N), covariance_matrix=K), obs=y
@@ -194,10 +195,10 @@ class MCMCGP(MCMCmodel):
 
         Returns:
             ndarray: The lower-triangular Cholesky factor (L) of the kernel matrix K, where
-                K = kernel(X, X, theta) + (sigma_n + 1e-8) * I_N.
+                K = kernel(X, X, theta) + (sigma_n + jitter(K)) * I_N.
 
         Notes:
-            - The kernel matrix is regularized by adding a small jitter (1e-8) to the diagonal for numerical stability.
+            - The kernel matrix is regularized by adding a problem-scaled jitter (:func:`jaxbo.gp.jitter`) to the diagonal for numerical stability.
             - This method is JIT-compiled with the first argument (self) as a static argument.
         """
         X = batch["X"]
@@ -206,7 +207,8 @@ class MCMCGP(MCMCmodel):
         sigma_n = params[-1]
         theta = params[:-1]
         # Compute kernel
-        K = self.kernel(X, X, theta) + np.eye(N) * (sigma_n + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * (sigma_n + jitter(K))
         L = cholesky(K, lower=True)
         return L
 
@@ -242,9 +244,8 @@ class MCMCGP(MCMCmodel):
         params = np.concatenate([np.array([var]), np.array(length), np.array([noise])])
         theta = params[:-1]
         # Compute kernels
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            noise + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (noise + jitter(k_pp))
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
@@ -252,7 +253,7 @@ class MCMCGP(MCMCmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         sample = mu + std * random.normal(key, mu.shape)
         mu = mu * norm_const["sigma_y"] + norm_const["mu_y"]
         sample = sample * norm_const["sigma_y"] + norm_const["mu_y"]
@@ -312,7 +313,8 @@ class GPclassifier(MCMCmodel):
         length = sample("kernel_length", dist.LogNormal(0.0, 1.0), sample_shape=(D,))
         theta = np.concatenate([var, length])
         # compute kernel
-        K = self.kernel(X, X, theta) + np.eye(N) * 1e-8
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * jitter(K)
         L = cholesky(K, lower=True)
         # Generate latent function
         beta = sample("beta", dist.Normal(0.0, 1.0))
@@ -347,8 +349,10 @@ class GPclassifier(MCMCmodel):
         eta = sample["eta"]
         theta = np.concatenate([var, length])
         # Compute kernels
-        K_xx = self.kernel(X, X, theta) + np.eye(X.shape[0]) * 1e-8
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * 1e-8
+        K_xx = self.kernel(X, X, theta)
+        K_xx = K_xx + np.eye(X.shape[0]) * jitter(K_xx)
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * jitter(k_pp)
         k_pX = self.kernel(X_star, X, theta)
         L = cholesky(K_xx, lower=True)
         f = np.matmul(L, eta) + beta
@@ -357,7 +361,7 @@ class GPclassifier(MCMCmodel):
         # Compute predictive mean
         mu = np.matmul(k_pX, tmp_1)
         cov = k_pp - np.matmul(k_pX, tmp_2)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         sample = mu + std * random.normal(key, mu.shape)
         return mu, sample
 
@@ -441,14 +445,13 @@ class MultifidelityGPclassifier(MCMCmodel):
         # prior for rho
         rho = sample("rho", dist.Normal(0.0, 10.0), sample_shape=(1,))
         # Compute kernels
-        K_LL = self.kernel(XL, XL, theta_L) + np.eye(NL) * 1e-8
+        K_LL = self.kernel(XL, XL, theta_L)
         K_LH = rho * self.kernel(XL, XH, theta_L)
-        K_HH = (
-            rho**2 * self.kernel(XH, XH, theta_L)
-            + self.kernel(XH, XH, theta_H)
-            + np.eye(NH) * 1e-8
-        )
+        K_HH = rho**2 * self.kernel(XH, XH, theta_L) + self.kernel(XH, XH, theta_H)
         K = np.vstack((np.hstack((K_LL, K_LH)), np.hstack((K_LH.T, K_HH))))
+        # Jitter on the assembled joint matrix, so it scales with the block
+        # structure rather than with either fidelity alone.
+        K = K + np.eye(NL + NH) * jitter(K)
         L = cholesky(K, lower=True)
         # Generate latent function
         beta_L = sample("beta_L", dist.Normal(0.0, 1.0))
@@ -516,25 +519,23 @@ class MultifidelityGPclassifier(MCMCmodel):
         beta = np.concatenate([beta_L * np.ones(NL), beta_H * np.ones(NH)])
         eta = np.concatenate([eta_L, eta_H])
         # Compute kernels
-        k_pp = (
-            rho**2 * self.kernel(X_star, X_star, theta_L)
-            + self.kernel(X_star, X_star, theta_H)
-            + np.eye(X_star.shape[0]) * 1e-8
+        k_pp = rho**2 * self.kernel(X_star, X_star, theta_L) + self.kernel(
+            X_star, X_star, theta_H
         )
+        k_pp = k_pp + np.eye(X_star.shape[0]) * jitter(k_pp)
         psi1 = rho * self.kernel(X_star, XL, theta_L)
         psi2 = rho**2 * self.kernel(X_star, XH, theta_L) + self.kernel(
             X_star, XH, theta_H
         )
         k_pX = np.hstack((psi1, psi2))
         # Compute K_xx
-        K_LL = self.kernel(XL, XL, theta_L) + np.eye(NL) * 1e-8
+        K_LL = self.kernel(XL, XL, theta_L)
         K_LH = rho * self.kernel(XL, XH, theta_L)
-        K_HH = (
-            rho**2 * self.kernel(XH, XH, theta_L)
-            + self.kernel(XH, XH, theta_H)
-            + np.eye(NH) * 1e-8
-        )
+        K_HH = rho**2 * self.kernel(XH, XH, theta_L) + self.kernel(XH, XH, theta_H)
         K_xx = np.vstack((np.hstack((K_LL, K_LH)), np.hstack((K_LH.T, K_HH))))
+        # Jitter on the assembled joint matrix, so it scales with the block
+        # structure rather than with either fidelity alone.
+        K_xx = K_xx + np.eye(NL + NH) * jitter(K_xx)
         L = cholesky(K_xx, lower=True)
         # Sample latent function
         f = np.matmul(L, eta) + beta
@@ -543,7 +544,7 @@ class MultifidelityGPclassifier(MCMCmodel):
         # Compute predictive mean
         mu = np.matmul(k_pX, tmp_1)
         cov = k_pp - np.matmul(k_pX, tmp_2)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         sample = mu + std * random.normal(key, mu.shape)
         return mu, sample
 
@@ -773,7 +774,8 @@ class MissingInputsGP(MCMCmodel):
         noise = sample("noise_var", dist.LogNormal(0.0, 10.0))
         theta = np.concatenate([np.array([var]), np.array(length)])
         # compute kernel
-        K = self.kernel(X, X, theta) + np.eye(N) * (noise + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * (noise + jitter(K))
         # sample Y according to the GP likelihood
         sample(
             "y", dist.MultivariateNormal(loc=np.zeros(N), covariance_matrix=K), obs=y
@@ -794,8 +796,8 @@ class MissingInputsGP(MCMCmodel):
             ndarray: The lower-triangular Cholesky factor (L) of the kernel matrix K.
 
         Notes:
-            - The kernel matrix K is computed as kernel(X, X, theta) + I * (sigma_n + 1e-8),
-              where I is the identity matrix and 1e-8 is added for numerical stability.
+            - The kernel matrix K is computed as kernel(X, X, theta) + I * (sigma_n + jitter(K)),
+              where I is the identity matrix and jitter is :func:`jaxbo.gp.jitter`.
             - Assumes that self.kernel is a callable kernel function and cholesky is available.
         """
         X = batch["X"]
@@ -804,7 +806,8 @@ class MissingInputsGP(MCMCmodel):
         sigma_n = params[-1]
         theta = params[:-1]
         # Compute kernel
-        K = self.kernel(X, X, theta) + np.eye(N) * (sigma_n + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * (sigma_n + jitter(K))
         L = cholesky(K, lower=True)
         return L
 
@@ -845,9 +848,8 @@ class MissingInputsGP(MCMCmodel):
         params = np.concatenate([np.array([var]), np.array(length), np.array([noise])])
         theta = params[:-1]
         # Compute kernels
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            noise + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (noise + jitter(k_pp))
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
@@ -855,7 +857,7 @@ class MissingInputsGP(MCMCmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         sample = mu + std * random.normal(key, mu.shape)
         # De-normalize
         norm_const = kwargs["norm_const"]

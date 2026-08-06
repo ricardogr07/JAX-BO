@@ -16,7 +16,7 @@ from jax.flatten_util import ravel_pytree
 from jax.scipy.linalg import cholesky, solve_triangular
 
 import jaxbo.initializers as initializers
-from jaxbo.gp import GPmodel
+from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.multifidelity.nn import init_NN
 from jaxbo.optimizers import minimize_lbfgs
 
@@ -73,7 +73,8 @@ class ManifoldGP(GPmodel):
         sigma_n = np.exp(gp_params[-1])
         theta = np.exp(gp_params[:-1])
         # Compute kernel
-        K = self.kernel(X, X, theta) + np.eye(N) * (sigma_n + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(N) * (sigma_n + jitter(K))
         L = cholesky(K, lower=True)
         return L
 
@@ -154,9 +155,8 @@ class ManifoldGP(GPmodel):
         sigma_n = np.exp(gp_params[-1])
         theta = np.exp(gp_params[:-1])
         # Compute kernels
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            sigma_n + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n + jitter(k_pp))
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
@@ -164,6 +164,6 @@ class ManifoldGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
 
         return mu, std

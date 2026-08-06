@@ -14,7 +14,7 @@ from jax import jit, jvp, random
 from jax.scipy.linalg import cholesky, solve_triangular
 
 import jaxbo.initializers as initializers
-from jaxbo.gp import GPmodel
+from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.optimizers import minimize_lbfgs
 
 
@@ -74,10 +74,13 @@ class GradientGP(GPmodel):
         sigma_n_G = np.exp(params[-1])
         theta = np.exp(params[:-2])
         # Compute kernels
-        K_FF = self.kernel(XF, XF, theta) + np.eye(NF) * (sigma_n_F + 1e-8)
+        K_FF = self.kernel(XF, XF, theta) + np.eye(NF) * sigma_n_F
         K_FG = self.k_dx2(XF, XG, theta)
-        K_GG = self.k_dx1dx2(XG, XG, theta) + np.eye(NG) * (sigma_n_G + 1e-8)
+        K_GG = self.k_dx1dx2(XG, XG, theta) + np.eye(NG) * sigma_n_G
         K = np.vstack((np.hstack((K_FF, K_FG)), np.hstack((K_FG.T, K_GG))))
+        # Jitter on the assembled joint matrix: the value and gradient blocks
+        # carry different scales, so neither alone sets the regularization.
+        K = K + np.eye(NF + NG) * jitter(K)
         L = cholesky(K, lower=True)
         return L
 
@@ -150,9 +153,8 @@ class GradientGP(GPmodel):
         sigma_n_F = np.exp(params[-2])
         theta = np.exp(params[:-2])
         # Compute kernels
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            sigma_n_F + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n_F + jitter(k_pp))
         psi1 = self.kernel(X_star, XF, theta)
         psi2 = self.k_dx2(X_star, XG, theta)
         k_pX = np.hstack((psi1, psi2))
@@ -162,6 +164,6 @@ class GradientGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
 
         return mu, std

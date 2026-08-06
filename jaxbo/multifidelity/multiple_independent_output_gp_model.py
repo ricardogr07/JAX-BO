@@ -17,7 +17,7 @@ from scipy.stats import qmc
 
 import jaxbo.acquisitions as acquisitions
 import jaxbo.initializers as initializers
-from jaxbo.gp import GPmodel
+from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.optimizers import minimize_lbfgs
 
 
@@ -54,7 +54,8 @@ class MultipleIndependentOutputsGP(GPmodel):
         X = batch["X"]
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
-        K = self.kernel(X, X, theta) + np.eye(X.shape[0]) * (sigma_n + 1e-8)
+        K = self.kernel(X, X, theta)
+        K = K + np.eye(X.shape[0]) * (sigma_n + jitter(K))
         return cholesky(K, lower=True)
 
     def train(
@@ -108,16 +109,15 @@ class MultipleIndependentOutputsGP(GPmodel):
             X, y = batch["X"], batch["y"]
             sigma_n = np.exp(params[-1])
             theta = np.exp(params[:-1])
-            k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-                sigma_n + 1e-8
-            )
+            k_pp = self.kernel(X_star, X_star, theta)
+            k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n + jitter(k_pp))
             k_pX = self.kernel(X_star, X, theta)
             L = self.compute_cholesky(params, batch)
             alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
             beta = solve_triangular(L.T, solve_triangular(L, k_pX.T, lower=True))
             mu = np.matmul(k_pX, alpha)
             cov = k_pp - np.matmul(k_pX, beta)
-            std = np.sqrt(np.clip(np.diag(cov), 0.0))
+            std = _std_from_variance(np.diag(cov), k_pp)
 
             if k > 0:
                 mu = mu * norm_const["sigma_y"] + norm_const["mu_y"]
@@ -140,16 +140,15 @@ class MultipleIndependentOutputsGP(GPmodel):
         X, y = batch["X"], batch["y"]
         sigma_n = np.exp(params[-1])
         theta = np.exp(params[:-1])
-        k_pp = self.kernel(X_star, X_star, theta) + np.eye(X_star.shape[0]) * (
-            sigma_n + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n + jitter(k_pp))
         k_pX = self.kernel(X_star, X, theta)
         L = self.compute_cholesky(params, batch)
         alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
         beta = solve_triangular(L.T, solve_triangular(L, k_pX.T, lower=True))
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
 
         return mu, std
 
@@ -260,9 +259,8 @@ class MultipleIndependentOutputsGP(GPmodel):
             X, y = batch["X"], batch["y"]
             sigma_n = np.exp(params[-1])
             theta = np.exp(params[:-1])
-            k_pp = self.kernel(X_star_scaled, X_star_scaled, theta) + np.eye(
-                X_star.shape[0]
-            ) * (sigma_n + 1e-8)
+            k_pp = self.kernel(X_star_scaled, X_star_scaled, theta)
+            k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n + jitter(k_pp))
             k_pX = self.kernel(X_star_scaled, X, theta)
             L = self.compute_cholesky(params, batch)
             alpha = solve_triangular(L.T, solve_triangular(L, y, lower=True))
