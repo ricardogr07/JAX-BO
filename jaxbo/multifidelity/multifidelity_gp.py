@@ -15,7 +15,7 @@ from jax import jit, random
 from jax.scipy.linalg import cholesky, solve_triangular
 
 import jaxbo.initializers as initializers
-from jaxbo.gp import GPmodel
+from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.optimizers import minimize_lbfgs
 
 
@@ -56,14 +56,17 @@ class MultifidelityGP(GPmodel):
         theta_L = np.exp(params[: D + 1])
         theta_H = np.exp(params[D + 1 : -3])
         # Compute kernels
-        K_LL = self.kernel(XL, XL, theta_L) + np.eye(NL) * (sigma_n_L + 1e-8)
+        K_LL = self.kernel(XL, XL, theta_L) + np.eye(NL) * sigma_n_L
         K_LH = rho * self.kernel(XL, XH, theta_L)
         K_HH = (
             rho**2 * self.kernel(XH, XH, theta_L)
             + self.kernel(XH, XH, theta_H)
-            + np.eye(NH) * (sigma_n_H + 1e-8)
+            + np.eye(NH) * sigma_n_H
         )
         K = np.vstack((np.hstack((K_LL, K_LH)), np.hstack((K_LH.T, K_HH))))
+        # Jitter on the assembled joint matrix, so it scales with the block
+        # structure rather than with either fidelity alone.
+        K = K + np.eye(NL + NH) * jitter(K)
         L = cholesky(K, lower=True)
         return L
 
@@ -141,11 +144,10 @@ class MultifidelityGP(GPmodel):
         theta_L = np.exp(params[: D + 1])
         theta_H = np.exp(params[D + 1 : -3])
         # Compute kernels
-        k_pp = (
-            rho**2 * self.kernel(X_star, X_star, theta_L)
-            + self.kernel(X_star, X_star, theta_H)
-            + np.eye(X_star.shape[0]) * (sigma_n_H + 1e-8)
+        k_pp = rho**2 * self.kernel(X_star, X_star, theta_L) + self.kernel(
+            X_star, X_star, theta_H
         )
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n_H + jitter(k_pp))
         psi1 = rho * self.kernel(X_star, XL, theta_L)
         psi2 = rho**2 * self.kernel(X_star, XH, theta_L) + self.kernel(
             X_star, XH, theta_H
@@ -157,7 +159,7 @@ class MultifidelityGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         return mu, std
 
     @partial(jit, static_argnums=(0,))
@@ -183,9 +185,8 @@ class MultifidelityGP(GPmodel):
         sigma_n_L = np.exp(params[-2])
         theta_L = np.exp(params[: D + 1])
         # Compute kernels
-        k_pp = self.kernel(X_star, X_star, theta_L) + np.eye(X_star.shape[0]) * (
-            sigma_n_L + 1e-8
-        )
+        k_pp = self.kernel(X_star, X_star, theta_L)
+        k_pp = k_pp + np.eye(X_star.shape[0]) * (sigma_n_L + jitter(k_pp))
         psi1 = self.kernel(X_star, XL, theta_L)
         psi2 = rho * self.kernel(X_star, XH, theta_L)
         k_pX = np.hstack((psi1, psi2))
@@ -195,7 +196,7 @@ class MultifidelityGP(GPmodel):
         # Compute predictive mean, std
         mu = np.matmul(k_pX, alpha)
         cov = k_pp - np.matmul(k_pX, beta)
-        std = np.sqrt(np.clip(np.diag(cov), 0.0))
+        std = _std_from_variance(np.diag(cov), k_pp)
         return mu, std
 
     @partial(jit, static_argnums=(0,))
