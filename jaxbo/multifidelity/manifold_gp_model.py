@@ -18,7 +18,7 @@ from jax.scipy.linalg import cholesky, solve_triangular
 import jaxbo.initializers as initializers
 from jaxbo.gp import GPmodel, _std_from_variance, jitter
 from jaxbo.multifidelity.nn import init_NN
-from jaxbo.optimizers import minimize_lbfgs
+from jaxbo.optimizers import minimize_lbfgs_grad
 
 
 class ManifoldGP(GPmodel):
@@ -112,7 +112,7 @@ class ManifoldGP(GPmodel):
             gp_params = initializers.random_init_GP(key1, dim)
             nn_params = self.net_init(key2, (-1, self.layers[0]))[1]
             init_params = np.concatenate([gp_params, ravel_pytree(nn_params)[0]])
-            p, val = minimize_lbfgs(objective, init_params)
+            p, val = minimize_lbfgs_grad(objective, init_params)
             params.append(p)
             likelihood.append(val)
         params = np.vstack(params)

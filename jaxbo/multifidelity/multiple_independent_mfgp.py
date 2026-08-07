@@ -19,7 +19,7 @@ from scipy.stats import qmc
 import jaxbo.acquisitions as acquisitions
 import jaxbo.initializers as initializers
 from jaxbo.gp import GPmodel, _std_from_variance, jitter
-from jaxbo.optimizers import minimize_lbfgs
+from jaxbo.optimizers import minimize_lbfgs_grad
 
 
 class MultipleIndependentMFGP(GPmodel):
@@ -104,7 +104,7 @@ class MultipleIndependentMFGP(GPmodel):
             rng_keys = random.split(rng_key, num_restarts)
             for i in range(num_restarts):
                 init = initializers.random_init_MultifidelityGP(rng_keys[i], dim)
-                p, val = minimize_lbfgs(objective, init)
+                p, val = minimize_lbfgs_grad(objective, init)
                 params.append(p)
                 likelihood.append(val)
             params = np.vstack(params)
@@ -303,7 +303,7 @@ class MultipleIndependentMFGP(GPmodel):
         x0 = lb + (ub - lb) * sampler.random(num_restarts)
         dom_bounds = tuple(map(tuple, np.vstack((lb, ub)).T))
         for i in range(num_restarts):
-            pos, val = minimize_lbfgs(objective, x0[i, :], bnds=dom_bounds)
+            pos, val = minimize_lbfgs_grad(objective, x0[i, :], bnds=dom_bounds)
             loc.append(pos)
             acq.append(val)
         loc = np.vstack(loc)

@@ -15,7 +15,7 @@ from jax.scipy.linalg import cholesky, solve_triangular
 
 import jaxbo.initializers as initializers
 from jaxbo.gp import GPmodel, _std_from_variance, jitter
-from jaxbo.optimizers import minimize_lbfgs
+from jaxbo.optimizers import minimize_lbfgs_grad
 
 
 class GradientGP(GPmodel):
@@ -115,7 +115,7 @@ class GradientGP(GPmodel):
         rng_key = random.split(rng_key, num_restarts)
         for i in range(num_restarts):
             init = initializers.random_init_GradientGP(rng_key[i], dim)
-            p, val = minimize_lbfgs(objective, init)
+            p, val = minimize_lbfgs_grad(objective, init)
             params.append(p)
             likelihood.append(val)
         params = np.vstack(params)
