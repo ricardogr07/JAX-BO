@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.2](https://github.com/ricardogr07/JAX-BO/compare/v0.2.1...v0.2.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* problem-scaled Cholesky jitter in the multifidelity and mcmc models ([#75](https://github.com/ricardogr07/JAX-BO/issues/75)) ([27fbcda](https://github.com/ricardogr07/JAX-BO/commit/27fbcda4f92555cede04f9f93c424cfd4e65ad6e)), closes [#71](https://github.com/ricardogr07/JAX-BO/issues/71)
+* scale the Cholesky jitter to the problem, stop clipping negative variances ([#74](https://github.com/ricardogr07/JAX-BO/issues/74)) ([d63e424](https://github.com/ricardogr07/JAX-BO/commit/d63e4244e574078dd8de0f97b441e6f91125037b))
+* use minimize_lbfgs_grad in extras models, add round-trip smoke tests ([#76](https://github.com/ricardogr07/JAX-BO/issues/76)) ([2adbfbe](https://github.com/ricardogr07/JAX-BO/commit/2adbfbee836d55578e470a1535d2db52fceef28e)), closes [#71](https://github.com/ricardogr07/JAX-BO/issues/71)
+
 ## [0.2.1](https://github.com/ricardogr07/JAX-BO/compare/v0.2.0...v0.2.1) (2026-08-05)
 
 
