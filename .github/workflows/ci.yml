@@ -38,6 +38,7 @@ jobs:
             core:
               - 'jaxbo/**'
               - 'tests/**'
+              - 'examples/**'
               - 'pyproject.toml'
               - 'tox.ini'
               # CI installs frozen from the lockfile, so a lock-only
@@ -180,9 +181,30 @@ jobs:
           uv sync --frozen --extra weighted --extra examples
           uv pip install nbmake
           uv run --no-sync pytest --nbmake --nbmake-timeout=900 examples/quickstart.ipynb examples/bo_tutorial.ipynb examples/active_learning.ipynb examples/constraint_tutorial.ipynb examples/constrained_bo_tutorial_Hybrid.ipynb examples/bo_with_gradients.ipynb
+
+  notebook-extras:
+    name: notebook extras
+    needs: gate
+    if: needs.gate.outputs.core == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up toolchain
+        uses: ./.github/actions/setup-env
+        with:
+          python-version: "3.12"
+
+      - name: Execute extras notebooks
+        shell: bash
+        run: |
+          uv sync --frozen --extra all --extra examples
+          uv pip install nbmake
+          uv run --no-sync pytest --nbmake --nbmake-timeout=900 examples/multifidelity_gp.ipynb examples/manifold_gp.ipynb examples/deep_multifidelity_gp.ipynb examples/heterogeneous_multifidelity_gp.ipynb examples/MF_constrained_bo_tutorial_decoupled.ipynb examples/MF_constrained_bo_tutorial_save_track.ipynb examples/HeterogeneousMF_constrained_bo_tutorial_decoupled.ipynb
+
   ci-ok:
     name: ci-ok
-    needs: [gate, lint, test, bench-smoke, notebook]
+    needs: [gate, lint, test, bench-smoke, notebook, notebook-extras]
     if: always()
     runs-on: ubuntu-latest
     steps:
