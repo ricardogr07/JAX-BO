@@ -162,7 +162,7 @@ jobs:
           uv run --no-sync pytest benchmarks --benchmark-disable
 
   notebook:
-    name: notebook quickstart
+    name: notebooks
     needs: gate
     if: needs.gate.result == 'success'
     runs-on: ubuntu-latest
@@ -174,12 +174,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Execute quickstart notebook
+      - name: Execute notebooks
         shell: bash
         run: |
-          uv sync --frozen
+          uv sync --frozen --extra weighted --extra examples
           uv pip install nbmake
-          uv run --no-sync pytest --nbmake examples/quickstart.ipynb
+          uv run --no-sync pytest --nbmake --nbmake-timeout=900 examples/quickstart.ipynb examples/bo_tutorial.ipynb examples/active_learning.ipynb examples/constraint_tutorial.ipynb examples/constrained_bo_tutorial_Hybrid.ipynb examples/bo_with_gradients.ipynb
   ci-ok:
     name: ci-ok
     needs: [gate, lint, test, bench-smoke, notebook]
