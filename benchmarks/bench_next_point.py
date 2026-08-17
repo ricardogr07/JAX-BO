@@ -29,7 +29,9 @@ from conftest import OPTIONS, SEED, make_problem
 from jaxbo.models import GP
 
 NUM_RESTARTS_NP = 10
+"""Number of random starts in next-point benchmarks."""
 LCB_KAPPA = 2.0
+"""Exploration coefficient for the LCB benchmark."""
 
 
 @pytest.fixture(scope="session")
@@ -54,6 +56,7 @@ def _time_first_call(benchmark, fn):
 
 
 def bench_next_point_lbfgs(benchmark, trained_128):
+    """Run the bench next point lbfgs benchmark."""
     gp, kwargs = trained_128
     call_kwargs = {**kwargs, "rng_key": random.PRNGKey(SEED + 2)}
 
@@ -69,6 +72,7 @@ def bench_next_point_lbfgs(benchmark, trained_128):
 
 
 def bench_next_point_lbfgs_early_ei(benchmark, trained_16):
+    """Run the bench next point lbfgs early ei benchmark."""
     gp, kwargs = trained_16
     call_kwargs = {**kwargs, "rng_key": random.PRNGKey(SEED + 2)}
 
@@ -83,6 +87,7 @@ def bench_next_point_lbfgs_early_ei(benchmark, trained_16):
 
 
 def bench_next_point_lbfgs_lcb(benchmark, trained_128):
+    """Run the bench next point lbfgs lcb benchmark."""
     # Same trained hyperparameters (training is criterion-independent), LCB
     # dispatch: every start carries gradient signal on this surface.
     _, kwargs = trained_128

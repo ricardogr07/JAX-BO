@@ -1,10 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Created on Wed Aug  4 21:57:09 2021
-
-@author: mohamedazizbhouri
-"""
+"""Run the multi-output manifold GP example workflow."""
 
 import numpy as onp
 import jax.numpy as np
