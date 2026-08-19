@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0](https://github.com/ricardogr07/JAX-BO/compare/v0.2.2...v0.3.0) (2026-08-19)
+
+
+### Features
+
+* add CPU-only quickstart notebook, wire nbmake into CI ([#78](https://github.com/ricardogr07/JAX-BO/issues/78)) ([98d36d9](https://github.com/ricardogr07/JAX-BO/commit/98d36d9dd342d1c74b352f7ff4d3b31bde5a22b2))
+
+
+### Bug Fixes
+
+* repair core notebooks against pyDOE removal and API drift ([#80](https://github.com/ricardogr07/JAX-BO/issues/80)) ([4380b24](https://github.com/ricardogr07/JAX-BO/commit/4380b24ef09a3e8849c6b9882d5de6f264b10842))
+* repair extras notebooks against pyDOE removal and API drift ([#81](https://github.com/ricardogr07/JAX-BO/issues/81)) ([bf14893](https://github.com/ricardogr07/JAX-BO/commit/bf14893ff2a1306e2c99c8be2c224075f25fe959))
+
+
+### Documentation
+
+* complete phase 5 release evidence ([#82](https://github.com/ricardogr07/JAX-BO/issues/82)) ([04bfac3](https://github.com/ricardogr07/JAX-BO/commit/04bfac3fa25b6b4fb0269523ea69169337ab688d))
+
 ## [0.2.2](https://github.com/ricardogr07/JAX-BO/compare/v0.2.1...v0.2.2) (2026-08-07)
 
 
