@@ -12,6 +12,7 @@ Writes results/2026-07-28-train-cprofile.prof and a top-40 text dump.
 """
 
 import cProfile
+import logging
 import io
 import pstats
 from pathlib import Path
@@ -21,13 +22,17 @@ from jax import random
 
 from conftest import NUM_RESTARTS, SEED, make_problem
 
+LOGGER = logging.getLogger(__name__)
 OUT = Path(__file__).parent / "results"
+"""Directory receiving profile artifacts."""
 
 
 def main():
+    """Run the main benchmark."""
     OUT.mkdir(exist_ok=True)
     gp, batch, _, _ = make_problem(128)
-    key = random.PRNGKey(SEED)
+    seed = SEED
+    key = random.PRNGKey(seed)
 
     prof = cProfile.Profile()
     prof.enable()
@@ -38,7 +43,7 @@ def main():
     s = io.StringIO()
     pstats.Stats(prof, stream=s).sort_stats("cumulative").print_stats(40)
     (OUT / "2026-07-28-train-cprofile.txt").write_text(s.getvalue())
-    print(s.getvalue()[:3000])
+    LOGGER.info("%s", s.getvalue()[:3000])
 
 
 if __name__ == "__main__":

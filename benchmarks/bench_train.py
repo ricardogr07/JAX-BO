@@ -31,8 +31,10 @@ from jaxbo.models import GP
 
 @pytest.mark.parametrize("n", [32, 128, 512])
 def bench_train_warm_instance(benchmark, n):
+    """Run the bench train warm instance benchmark."""
     gp, batch, _, _ = make_problem(n)
-    key = random.PRNGKey(SEED)
+    seed = SEED
+    key = random.PRNGKey(seed)
 
     t0 = time.perf_counter()
     jax.block_until_ready(gp.train(batch, key, num_restarts=NUM_RESTARTS))
@@ -60,7 +62,8 @@ def bench_train_fresh_instance(benchmark):
     per-round cost is what one consumer BO iteration pays today.
     """
     _, batch, _, _ = make_problem(128)
-    key = random.PRNGKey(SEED)
+    seed = SEED
+    key = random.PRNGKey(seed)
 
     def fresh_train():
         gp = GP(dict(OPTIONS))

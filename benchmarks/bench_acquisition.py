@@ -29,9 +29,11 @@ from conftest import DIM, SEED
 from jaxbo import acquisitions
 
 N_CANDIDATES = 256
+"""Number of candidates scored by acquisition benchmarks."""
 
 
 def bench_ei_consumer_path_256(benchmark, trained_128):
+    """Run the bench ei consumer path 256 benchmark."""
     gp, kwargs = trained_128
     # The consumer passes only params/batch/bounds to predict.
     pk = {k: kwargs[k] for k in ("params", "batch", "bounds")}
@@ -62,6 +64,7 @@ def bench_ei_consumer_path_256(benchmark, trained_128):
 
 
 def bench_ei_fused_acquisition_256(benchmark, trained_128):
+    """Run the bench ei fused acquisition 256 benchmark."""
     gp, kwargs = trained_128
     rng = onp.random.default_rng(SEED + 1)
     X_cand = jnp.asarray(rng.dirichlet(onp.ones(DIM), size=N_CANDIDATES))
@@ -81,6 +84,7 @@ def bench_ei_fused_acquisition_256(benchmark, trained_128):
 
 
 def bench_ei_score_candidates_256(benchmark, trained_128):
+    """Run the bench ei score candidates 256 benchmark."""
     gp, kwargs = trained_128
     # Same inputs as the consumer-path bench: params/batch/bounds only,
     # same seed, same Dirichlet candidates.

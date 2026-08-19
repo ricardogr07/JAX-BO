@@ -17,6 +17,7 @@ from conftest import DIM, SEED
 
 
 def bench_predict_batch256(benchmark, trained_128):
+    """Run the bench predict batch256 benchmark."""
     gp, kwargs = trained_128
     rng = onp.random.default_rng(SEED + 2)
     X_star = jnp.asarray(rng.uniform(size=(256, DIM)))
