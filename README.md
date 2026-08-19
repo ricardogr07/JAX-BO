@@ -136,7 +136,7 @@ Then open the printed `http://127.0.0.1:8888/lab?token=...` URL.
 
 ## Final benchmark evidence
 
-Four clean runs from the existing `.venv`, using `.venv\Scripts\python.exe -m pytest benchmarks -q`, produced raw JSON artifacts in `benchmarks/results/2026-08-15-rc-run{1,2,3,4}.json`. Values below are medians across the four run medians. IQRs and cross-session noise bands, including comparison ratios, are in `benchmarks/results/2026-08-15-rc-final.md`.
+Four clean runs from the existing `.venv`, using `.venv\Scripts\python.exe -m pytest benchmarks -q --benchmark-json=benchmarks/results/2026-08-15-rc-runN.json`, produced raw JSON artifacts in `benchmarks/results/2026-08-15-rc-run{1,2,3,4}.json`. Values below are medians across the four run medians. IQRs and cross-session noise bands, including comparison ratios, are in `benchmarks/results/2026-08-15-rc-final.md`.
 
 | Bench | RC median | vs 2026-07-28 | vs v0.2.0 |
 |---|---:|---:|---:|
