@@ -1,6 +1,6 @@
 """Multiple independent heterogeneous two-fidelity GPs for constrained BO.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). One
+Part of the ``[multifidelity]`` extra. One
 :class:`HeterogeneousMultifidelityGP`-style model per output (objective plus
 constraints), each warping its low-fidelity inputs through a shared
 sigmoid-squashed MLP, plus the constrained acquisition machinery (EIC, LCBC,
@@ -283,7 +283,7 @@ class MultipleIndependentHeterogeneousMFGP(GPmodel):
             return acquisitions.LCBC(mean, std, kappa)
         elif self.options["constrained_criterion"] == "LW_LCBC":
             # Lazy import: gmm_vars flows live behind the [weighted] extra
-            # (SCOPE.md decision 7) and raise its install hint when missing.
+            # and raise its install hint when missing.
             from jaxbo.weights import compute_w_gmm
 
             kappa = kwargs["kappa"]

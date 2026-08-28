@@ -1,6 +1,6 @@
 """Input prior distributions over the optimization domain.
 
-Part of the jaxbo core (SCOPE.md section 3). The historical module name
+Part of the jaxbo core. The historical module name
 ``jaxbo.input_priors`` re-exports everything here.
 """
 

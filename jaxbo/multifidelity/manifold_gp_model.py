@@ -1,6 +1,6 @@
 """Manifold GP: a neural feature map composed with a GP kernel.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). Inputs are warped
+Part of the ``[multifidelity]`` extra. Inputs are warped
 through an MLP (:func:`jaxbo.multifidelity.nn.init_NN`) before entering the
 kernel; the network weights and the GP hyperparameters are optimized jointly
 on the marginal likelihood.

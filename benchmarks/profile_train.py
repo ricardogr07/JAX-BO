@@ -12,13 +12,13 @@ Writes results/2026-07-28-train-cprofile.prof and a top-40 text dump.
 """
 
 import cProfile
-import logging
 import io
+import logging
 import pstats
 from pathlib import Path
 
 import jax
-from jax import random
+import jax.random as jax_random
 
 from conftest import NUM_RESTARTS, SEED, make_problem
 
@@ -32,7 +32,7 @@ def main():
     OUT.mkdir(exist_ok=True)
     gp, batch, _, _ = make_problem(128)
     seed = SEED
-    key = random.PRNGKey(seed)
+    key = jax_random.PRNGKey(seed)
 
     prof = cProfile.Profile()
     prof.enable()

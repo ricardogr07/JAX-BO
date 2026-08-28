@@ -2,7 +2,7 @@
 
 Holds the ``jax.example_libraries.stax`` surface (MLP, ResNet, and
 MomentumResNet initializers) that warps inputs before the GP kernel. It
-belongs to the ``[multifidelity]`` extra (SCOPE.md section 3), so the jaxbo
+belongs to the ``[multifidelity]`` extra, so the jaxbo
 core never imports it eagerly; the historical ``jaxbo.utils.init_*`` paths
 keep working through a lazy forward.
 """

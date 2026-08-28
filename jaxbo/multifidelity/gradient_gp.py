@@ -1,6 +1,6 @@
 """GP regression on joint function and gradient observations.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). The covariance
+Part of the ``[multifidelity]`` extra. The covariance
 between gradient observations is obtained by differentiating the kernel with
 forward-mode autodiff (``jvp``), so any core kernel works unchanged.
 """

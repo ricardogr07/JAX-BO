@@ -25,14 +25,14 @@ classifiers = [
   "Operating System :: OS Independent",
 ]
 
-# The core installs with exactly these 4 dependencies (SCOPE.md section 3);
+# The core installs with exactly these 4 dependencies;
 # everything else lives behind the optional extras below.
 dependencies = [
   "numpy",
   # scipy.stats.qmc (the pyDOE replacement) first shipped in scipy 1.7.0
   "scipy>=1.7",
   # Tested range. jax 0.10 removed the clip a_min/a_max kwargs (handled in #43);
-  # 0.11 is unproven here. SCOPE.md: this ceiling moves only on a green CI run.
+  # 0.11 is unproven here. Raise this ceiling only on a green CI run.
   "jax>=0.6,<0.11",
   "jaxlib>=0.6,<0.11",
 ]

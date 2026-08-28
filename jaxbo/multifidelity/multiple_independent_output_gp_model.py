@@ -1,6 +1,6 @@
 """Multiple independent single-fidelity GPs for constrained BO.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). One plain GP per
+Part of the ``[multifidelity]`` extra. One plain GP per
 output (objective plus constraints) trained independently, plus the
 constrained acquisition machinery (EIC, LCBC, and the ``[weighted]``-gated
 LW_LCBC).
@@ -172,7 +172,7 @@ class MultipleIndependentOutputsGP(GPmodel):
             return acquisitions.LCBC(mean, std, kwargs["kappa"])
         elif criterion == "LW_LCBC":
             # Lazy import: gmm_vars flows live behind the [weighted] extra
-            # (SCOPE.md decision 7) and raise its install hint when missing.
+            # and raise its install hint when missing.
             from jaxbo.weights import compute_w_gmm
 
             weights = compute_w_gmm(x, **kwargs)

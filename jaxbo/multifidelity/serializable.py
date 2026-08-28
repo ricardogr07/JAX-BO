@@ -1,6 +1,6 @@
 """JSON round-trip helpers for multifidelity optimization state.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3): serializes and
+Part of the ``[multifidelity]`` extra: serializes and
 restores the parameter lists, function and constraint observations, bounds,
 and GMM variables produced by the constrained multifidelity workflow. The
 historical ``jaxbo.serializable`` import path keeps working via a shim.
