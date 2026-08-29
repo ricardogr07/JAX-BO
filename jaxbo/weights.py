@@ -234,11 +234,11 @@ def fit_gmm_constrained(
     """Constrained variant of :func:`fit_gmm` for multi-output models.
 
     Extracted from the byte-identical ``fit_gmm`` methods of
-    ``MultipleIndependentMFGP`` and ``MultipleIndependentHeterogeneousMFGP``
-   ; both now delegate here. Row 0 of
-    ``model.predict_all`` is treated as the objective and every following row
-    as a constraint; the importance weights are multiplied by the probability
-    of constraint satisfaction ``Phi(mu_c / std_c)``.
+    ``MultipleIndependentMFGP`` and ``MultipleIndependentHeterogeneousMFGP``;
+    both now delegate here. Row 0 of ``model.predict_all`` is treated as the
+    objective and every following row as a constraint. The importance weights
+    are multiplied by the probability of constraint satisfaction
+    ``Phi(mu_c / std_c)``.
 
     Args:
         model: A multi-output jaxbo GP model exposing ``predict_all`` and
