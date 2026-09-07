@@ -1,6 +1,6 @@
 """Two-fidelity autoregressive GP regression (Kennedy and O'Hagan style).
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). The low- and
+Part of the ``[multifidelity]`` extra. The low- and
 high-fidelity processes are linked by a scalar correlation ``rho``:
 ``f_H(x) = rho * f_L(x) + delta(x)``, each with its own kernel
 hyperparameters and noise.

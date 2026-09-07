@@ -1,6 +1,6 @@
 """Heterogeneous two-fidelity GP: fidelities living on different input spaces.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). The low-fidelity
+Part of the ``[multifidelity]`` extra. The low-fidelity
 inputs are mapped into the high-fidelity unit cube by a sigmoid-squashed MLP
 (:func:`jaxbo.multifidelity.nn.init_NN`) before the autoregressive
 two-fidelity kernel is applied.

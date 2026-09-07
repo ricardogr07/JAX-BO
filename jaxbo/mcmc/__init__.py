@@ -2,7 +2,7 @@
 
 Everything here runs full Bayesian inference over the GP hyperparameters
 with numpyro's NUTS instead of the core's point-estimate L-BFGS training
-(SCOPE.md section 3). The jaxbo core never imports this package eagerly;
+. The jaxbo core never imports this package eagerly;
 ``jaxbo.mcmc_models`` remains as a compatibility shim for the historical
 import path.
 """

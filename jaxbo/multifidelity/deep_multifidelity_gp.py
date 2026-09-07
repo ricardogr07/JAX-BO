@@ -1,6 +1,6 @@
 """Deep two-fidelity GP: a learned feature map under the autoregressive kernel.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). Both fidelities
+Part of the ``[multifidelity]`` extra. Both fidelities
 share one network (MLP, ResNet, or MomentumResNet from
 :mod:`jaxbo.multifidelity.nn`) that warps inputs before the two-fidelity
 kernel; network and GP parameters are optimized jointly.

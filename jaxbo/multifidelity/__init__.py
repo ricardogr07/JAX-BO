@@ -1,6 +1,6 @@
 """Multifidelity, manifold, gradient, and multi-output GP models.
 
-Home of the ``[multifidelity]`` optional extra (SCOPE.md section 3): the six
+Home of the ``[multifidelity]`` optional extra: the six
 multifidelity models, the two manifold models, ``GradientGP``, and
 ``MultipleIndependentOutputsGP``, all built on the shared
 :class:`jaxbo.gp.GPmodel` base, plus the neural network feature maps

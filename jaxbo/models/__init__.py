@@ -16,7 +16,7 @@
 """Model namespace for jaxbo.
 
 The core exposes exactly two classes eagerly: :class:`jaxbo.gp.GPmodel` and
-:class:`jaxbo.gp.GP` (SCOPE.md section 3). The multifidelity, manifold,
+:class:`jaxbo.gp.GP`. The multifidelity, manifold,
 gradient, and multiple-output research models moved to the
 :mod:`jaxbo.multifidelity` extra; they remain importable from this namespace
 for backward compatibility, resolved lazily on first access so the core
@@ -28,7 +28,7 @@ from typing import List
 from jaxbo.gp import GP, GPmodel
 
 # Lazily resolved research models: attribute name to its jaxbo.multifidelity
-# home (SCOPE.md sections 3 and 7). Nothing in the core imports them eagerly.
+# home. Nothing in the core imports them eagerly.
 _LAZY_MODELS = {
     "MultipleIndependentOutputsGP": "multiple_independent_output_gp_model",
     "ManifoldGP": "manifold_gp_model",

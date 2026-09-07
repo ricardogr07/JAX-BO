@@ -1,6 +1,6 @@
 """Core Gaussian process models: the ``GPmodel`` base class and the exact ``GP``.
 
-This module is the heart of the jaxbo core (SCOPE.md section 3). It must stay
+This module is the heart of the jaxbo core. It must stay
 importable with only the core dependencies (jax, jaxlib, numpy, scipy): the
 weighted-sampling surface (``fit_gmm``, the ``LW_*`` acquisition branches)
 lives in :mod:`jaxbo.weights` (the ``[weighted]`` extra) and is imported
@@ -251,7 +251,7 @@ class GPmodel(ABC):
             means, and covariance matrices.
         """
         # Lazy import: the whole gmm_vars surface lives behind the [weighted]
-        # extra (SCOPE.md decision 7); the core import graph never reaches
+        # extra; the core import graph never reaches
         # scikit-learn or KDEpy.
         from jaxbo.weights import fit_gmm
 
@@ -292,7 +292,7 @@ class GPmodel(ABC):
 
         def lw_lcb_wrapped():
             # Lazy import: gmm_vars flows live behind the [weighted] extra
-            # (SCOPE.md decision 7) and raise its install hint when missing.
+            # and raise its install hint when missing.
             from jaxbo.weights import compute_w_gmm
 
             kappa = kwargs["kappa"]
@@ -612,7 +612,7 @@ class GP(GPmodel):
     computation across restarts.
 
     Warning:
-        Normalization contract (SCOPE.md section 2), the two halves are
+        Normalization contract, the two halves are
         asymmetric on purpose and mixing them up fails silently:
 
         - ``train`` consumes ``batch`` exactly as given: pass an ALREADY

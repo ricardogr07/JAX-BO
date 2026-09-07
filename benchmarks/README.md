@@ -89,31 +89,10 @@ compile-time measure. The benchmarked path is synchronized with
 `jax.block_until_ready` (or a host `float()` on the consumer path, which
 forces the same sync).
 
-## Baseline (2026-08-01, v0.2.0): the Phase 3 comparison base
+## Current evidence
 
-Recorded on tag `v0.2.0` on a verified-quiet machine (11th Gen Intel Core
-i7-1185G7, 8 threads, Windows 10 Pro build 19045, CPU-only jax 0.10.2,
-Python 3.11.14). Full detail, per-run medians and IQRs, noise bands, and
-the machine-state protocol: `results/2026-08-01-v0.2.0-baseline.md`. The
-3a/3b/3c delta tables gate against that file. The pre-refactor record
-(`results/2026-07-28-baseline.md`) is history, not a comparison base.
-
-Baseline = median of four clean run medians:
-
-| Bench | Baseline | First-call latency |
-|---|---|---|
-| train warm instance, n=32 | 53.7 ms | 0.34 to 0.59 s |
-| train warm instance, n=128 | 137.8 ms | 0.34 to 0.64 s |
-| train warm instance, n=512 | 1808 ms | 1.61 to 2.53 s |
-| train fresh instance, n=128 | 516.3 ms | every round is a first call |
-| predict, 256 points batched | 0.99 ms | 0.18 to 0.32 s |
-| EI consumer path, 256 candidates | 122.0 ms (0.476 ms per candidate) | 0.27 to 0.36 s |
-| EI fused acquisition, 256 candidates | 71.5 ms (0.279 ms per candidate) | 0.21 to 0.28 s |
-| EI score_candidates, 256 batched | 1.61 ms (0.006 ms per candidate) | 0.30 to 0.50 s |
-
-Two numbers worth naming: a fresh GP instance still pays instance-keyed
-recompilation per train at n=128 (paired gap 260 to 538 ms across machine
-states, median about 350 ms, fresh/warm ratio 2.9 to 5.4x; the issue #30
-gate), and `score_candidates` scores 256 candidates about 76x cheaper than
-the per-candidate consumer loop (the issue #28 win, confirmed in the
-released package).
+The public benchmark record is
+`results/2026-08-15-rc-final.md`. It contains the `0.2.2` medians,
+comparison ratios, environment, and noise-band interpretation. Raw timing
+files and intermediate comparison reports are intentionally excluded from the
+library tree.

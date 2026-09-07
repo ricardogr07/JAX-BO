@@ -15,7 +15,7 @@
 
 """jaxbo: Bayesian optimization on JAX.
 
-The eager namespace below is the core (SCOPE.md section 3): it imports with
+The eager namespace below is the core: it imports with
 only the core dependencies (jax, jaxlib, numpy, scipy). The extras are
 resolved lazily on first attribute access so ``import jaxbo`` never pays for
 them: ``mcmc`` (the ``[mcmc]`` extra, numpyro), ``multifidelity`` (the

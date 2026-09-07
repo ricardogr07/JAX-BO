@@ -23,7 +23,7 @@ import time
 
 import jax
 import pytest
-from jax import random
+import jax.random as jax_random
 
 from conftest import NUM_RESTARTS, OPTIONS, SEED, make_problem
 from jaxbo.models import GP
@@ -34,7 +34,7 @@ def bench_train_warm_instance(benchmark, n):
     """Run the bench train warm instance benchmark."""
     gp, batch, _, _ = make_problem(n)
     seed = SEED
-    key = random.PRNGKey(seed)
+    key = jax_random.PRNGKey(seed)
 
     t0 = time.perf_counter()
     jax.block_until_ready(gp.train(batch, key, num_restarts=NUM_RESTARTS))
@@ -63,7 +63,7 @@ def bench_train_fresh_instance(benchmark):
     """
     _, batch, _, _ = make_problem(128)
     seed = SEED
-    key = random.PRNGKey(seed)
+    key = jax_random.PRNGKey(seed)
 
     def fresh_train():
         gp = GP(dict(OPTIONS))

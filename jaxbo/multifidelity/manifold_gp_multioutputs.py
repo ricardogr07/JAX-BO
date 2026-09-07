@@ -1,6 +1,6 @@
 """Multi-output manifold GP for constrained Bayesian optimization.
 
-Part of the ``[multifidelity]`` extra (SCOPE.md section 3). One
+Part of the ``[multifidelity]`` extra. One
 :class:`ManifoldGP`-style model per output (objective plus constraints),
 each with its own packed parameters, plus the constrained acquisition
 machinery (EIC, LCBC, and the ``[weighted]``-gated LW_LCBC).
@@ -242,7 +242,7 @@ class ManifoldGP_MultiOutputs(GPmodel):
             return acquisitions.LCBC(mean, std, kappa)
         elif self.options["constrained_criterion"] == "LW_LCBC":
             # Lazy import: gmm_vars flows live behind the [weighted] extra
-            # (SCOPE.md decision 7) and raise its install hint when missing.
+            # and raise its install hint when missing.
             from jaxbo.weights import compute_w_gmm
 
             kappa = kwargs["kappa"]

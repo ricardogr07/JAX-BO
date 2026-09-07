@@ -1,0 +1,256 @@
+{
+  "fix_list": [
+    {
+      "check_id": "s2.package",
+      "priority_note": "",
+      "standard": 2,
+      "title": "Verify an editable install in a clean environment."
+    },
+    {
+      "check_id": "s3.suite",
+      "priority_note": "Standard 3, Proven, carries the highest weight; nothing above it can be trusted until it passes",
+      "standard": 3,
+      "title": "Rerun with --run-subprocess-checks to execute the suite."
+    },
+    {
+      "check_id": "s5.logs",
+      "priority_note": "",
+      "standard": 5,
+      "title": "Ship logs to a queryable backend (OpenTelemetry, Azure Monitor, or structlog handler)."
+    },
+    {
+      "check_id": "s5.metrics",
+      "priority_note": "",
+      "standard": 5,
+      "title": "Instrument the missing surface: production metrics for serving, experiment tracking for training."
+    },
+    {
+      "check_id": "s5.alerting",
+      "priority_note": "",
+      "standard": 5,
+      "title": "Add an alert rule that fires when an emitted metric crosses a threshold."
+    }
+  ],
+  "grade": 3,
+  "is_ds_repo": true,
+  "notes": [],
+  "root_path": "C:\\git\\JAX-BO",
+  "serving_files": 1,
+  "standards": [
+    {
+      "checks": [
+        {
+          "check_id": "s0.env_spec",
+          "evidence": [
+            "pyproject.toml covers 5 confident third-party import(s)",
+            "not in mapping table, unverified: KDEpy, conftest, jax, numpyro"
+          ],
+          "name": "Environment spec",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s0.lockfile",
+          "evidence": [
+            "uv.lock present and newer than or equal to pyproject.toml"
+          ],
+          "name": "Dependency pinning",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s0.determinism",
+          "evidence": [
+            "no random sources detected in model code"
+          ],
+          "name": "Determinism",
+          "remediation": "",
+          "status": "pass"
+        }
+      ],
+      "name": "Reproducible",
+      "number": 0,
+      "passed": true,
+      "passed_count": 3
+    },
+    {
+      "checks": [
+        {
+          "check_id": "s1.git_history",
+          "evidence": [
+            "236 commits with legible subjects"
+          ],
+          "name": "Version control",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s1.docs",
+          "evidence": [
+            "docstring coverage 70% (76/108)"
+          ],
+          "name": "Documentation",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s1.logging",
+          "evidence": [
+            "no stray print() calls in checked modules"
+          ],
+          "name": "Logging",
+          "remediation": "",
+          "status": "pass"
+        }
+      ],
+      "name": "Legible",
+      "number": 1,
+      "passed": true,
+      "passed_count": 3
+    },
+    {
+      "checks": [
+        {
+          "check_id": "s2.package",
+          "evidence": [
+            "looks installable; rerun with --run-subprocess-checks to verify"
+          ],
+          "name": "Package",
+          "remediation": "Verify an editable install in a clean environment.",
+          "status": "uncertain"
+        },
+        {
+          "check_id": "s2.boundaries",
+          "evidence": [
+            "no raw I/O in model/serving code"
+          ],
+          "name": "Module boundaries",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s2.config_external",
+          "evidence": [
+            "no credential-shaped literals found"
+          ],
+          "name": "Config externalization",
+          "remediation": "",
+          "status": "pass"
+        }
+      ],
+      "name": "Structured",
+      "number": 2,
+      "passed": false,
+      "passed_count": 2
+    },
+    {
+      "checks": [
+        {
+          "check_id": "s3.suite",
+          "evidence": [
+            "18 test file(s) present; rerun with --run-subprocess-checks to execute them"
+          ],
+          "name": "Test suite",
+          "remediation": "Rerun with --run-subprocess-checks to execute the suite.",
+          "status": "uncertain"
+        },
+        {
+          "check_id": "s3.behavioral",
+          "evidence": [
+            "45/79 test functions make value-bearing assertions (ratio 0.57)"
+          ],
+          "name": "Behavioral coverage",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s3.eval_gate",
+          "evidence": [
+            "evaluation gate jaxbo/test_functions.py runs in CI or as a test"
+          ],
+          "name": "Evaluation gate",
+          "remediation": "",
+          "status": "pass"
+        }
+      ],
+      "name": "Proven",
+      "number": 3,
+      "passed": false,
+      "passed_count": 2
+    },
+    {
+      "checks": [
+        {
+          "check_id": "s4.deploy_path",
+          "evidence": [
+            "deploy/publish workflow: .github/workflows/ci.yml"
+          ],
+          "name": "Deploy independence",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s4.env_isolation",
+          "evidence": [
+            "Dockerfile copies a lockfile and installs from it"
+          ],
+          "name": "Environment isolation",
+          "remediation": "",
+          "status": "pass"
+        },
+        {
+          "check_id": "s4.cicd",
+          "evidence": [
+            "deploy job 'test' in .github/workflows/ci.yml needs the test job"
+          ],
+          "name": "CI/CD",
+          "remediation": "",
+          "status": "pass"
+        }
+      ],
+      "name": "Shipped",
+      "number": 4,
+      "passed": true,
+      "passed_count": 3
+    },
+    {
+      "checks": [
+        {
+          "check_id": "s5.logs",
+          "evidence": [
+            "no log exporter in serving code: logs die with the process"
+          ],
+          "name": "Queryable logs",
+          "remediation": "Ship logs to a queryable backend (OpenTelemetry, Azure Monitor, or structlog handler).",
+          "status": "fail"
+        },
+        {
+          "check_id": "s5.metrics",
+          "evidence": [
+            "serving surface emits no production metrics",
+            "training surface logs no experiment metrics"
+          ],
+          "name": "Metric tracking",
+          "remediation": "Instrument the missing surface: production metrics for serving, experiment tracking for training.",
+          "status": "fail"
+        },
+        {
+          "check_id": "s5.alerting",
+          "evidence": [
+            "no alert rules found (Prometheus rules, Azure metric alerts, or a scheduled check)"
+          ],
+          "name": "Alerting",
+          "remediation": "Add an alert rule that fires when an emitted metric crosses a threshold.",
+          "status": "fail"
+        }
+      ],
+      "name": "Accountable",
+      "number": 5,
+      "passed": false,
+      "passed_count": 0
+    }
+  ],
+  "subprocess_checks_ran": false,
+  "training_files": 3,
+  "uncertain_count": 2
+}

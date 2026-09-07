@@ -1,6 +1,6 @@
 """Core normalization and standardization helpers for jaxbo models.
 
-This module is part of the jaxbo core (SCOPE.md section 3) and depends only
+This module is part of the jaxbo core and depends only
 on jax and numpy. The weighted-sampling machinery (``fit_kernel_density``,
 ``compute_w_gmm``) moved to :mod:`jaxbo.weights` (the ``[weighted]`` extra)
 and the stax neural network initializers (``init_NN``, ``init_ResNet``,
@@ -15,7 +15,7 @@ from typing import Dict, List, Tuple
 import jax.numpy as np
 from jax import jit
 
-# Names that moved out of the core with the extras split (SCOPE.md
+# Names that moved out of the core with the extras split (the
 # decision 7): attribute name to its new home. Accessing a [weighted] name
 # without scikit-learn and KDEpy installed raises the jaxbo.weights
 # ImportError naming pip install jaxbo[weighted].

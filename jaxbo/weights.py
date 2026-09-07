@@ -1,6 +1,6 @@
 """Weighted-sampling machinery: the ``[weighted]`` optional extra.
 
-Owns the whole GMM/KDE surface extracted from the model classes (SCOPE.md
+Owns the whole GMM/KDE surface extracted from the model classes (the
 decision 7): :func:`fit_kernel_density`, :func:`compute_w_gmm`, and the two
 importance-reweighted GMM fitters :func:`fit_gmm` (single objective) and
 :func:`fit_gmm_constrained` (objective plus constraints). The ``LW_*``
@@ -154,7 +154,7 @@ def fit_gmm(
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Fit a GMM that reweights the input prior by the model's predictions.
 
-    Extracted from ``GPmodel.fit_gmm`` (SCOPE.md decision 7); the method now
+    Extracted from ``GPmodel.fit_gmm``; the method now
     delegates here. Used to enable prior-informed acquisition functions such
     as LW-LCB or LW-US:
 
@@ -234,11 +234,11 @@ def fit_gmm_constrained(
     """Constrained variant of :func:`fit_gmm` for multi-output models.
 
     Extracted from the byte-identical ``fit_gmm`` methods of
-    ``MultipleIndependentMFGP`` and ``MultipleIndependentHeterogeneousMFGP``
-    (SCOPE.md decision 7); both now delegate here. Row 0 of
-    ``model.predict_all`` is treated as the objective and every following row
-    as a constraint; the importance weights are multiplied by the probability
-    of constraint satisfaction ``Phi(mu_c / std_c)``.
+    ``MultipleIndependentMFGP`` and ``MultipleIndependentHeterogeneousMFGP``;
+    both now delegate here. Row 0 of ``model.predict_all`` is treated as the
+    objective and every following row as a constraint. The importance weights
+    are multiplied by the probability of constraint satisfaction
+    ``Phi(mu_c / std_c)``.
 
     Args:
         model: A multi-output jaxbo GP model exposing ``predict_all`` and
